@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import LiveMode from "./pages/LiveMode";
 import TimedMode from "./pages/TimedMode";
+import WasteSorter from "./pages/WasteSorter";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/live-mode" element={<LiveMode />} />
           <Route path="/timed-mode" element={<TimedMode />} />
+          <Route path="/waste-sorter" element={<WasteSorter />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
