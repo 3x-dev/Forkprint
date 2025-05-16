@@ -52,9 +52,6 @@ const Dashboard = () => {
             <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">Dashboard</h1>
             <p className="text-lg text-gray-600 mt-1">Welcome back, {user?.email?.split('@')[0] || 'User'}!</p>
           </div>
-          <Button onClick={handleSignOut} variant="outline" className="mt-4 sm:mt-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
-            Sign Out
-          </Button>
         </div>
 
         <section className="mb-12 p-6 bg-white shadow-xl rounded-xl border border-gray-200">

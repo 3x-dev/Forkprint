@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 
 const Navbar = () => {
-  const { user, signOut } = useAuthContext();
+  const { user, signOut, signInWithGoogle } = useAuthContext();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const toggleMenu = () => {
@@ -43,14 +43,13 @@ const Navbar = () => {
                   </Button>
                 </>
               ) : (
-                <Link to="/sign-in">
-                  <Button 
-                    className="ml-4"
-                    variant="outline"
-                  >
-                    Sign In
-                  </Button>
-                </Link>
+                <Button 
+                  onClick={() => signInWithGoogle()}
+                  className="ml-4"
+                  variant="outline"
+                >
+                  Sign In
+                </Button>
               )}
             </div>
           </div>
@@ -101,12 +100,15 @@ const Navbar = () => {
                 </button>
               </>
             ) : (
-              <Link to="/sign-in"
-                className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
-                onClick={() => setIsMenuOpen(false)}
+              <button
+                className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+                onClick={() => {
+                  signInWithGoogle();
+                  setIsMenuOpen(false);
+                }}
               >
                 Sign In
-              </Link>
+              </button>
             )}
           </div>
         </div>
