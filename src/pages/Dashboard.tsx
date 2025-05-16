@@ -1,7 +1,7 @@
-
 import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { BarChart2, ShoppingBag, Trash2, ChevronRight } from "lucide-react";
 
 const Dashboard = () => {
   const { user, signOut } = useAuthContext();
@@ -14,35 +14,94 @@ const Dashboard = () => {
     }
   };
 
+  const features = [
+    {
+      title: "Food Expiry Tracker",
+      icon: <BarChart2 className="h-8 w-8 text-green-600 mb-3" />,
+      description: "Reduce household food waste. Track perishables, get expiry reminders, and learn if expired items are compostable or must be trashed. Help divert organics from landfill.",
+      goal: "APES Concepts: Decomposition, landfill methane, composting benefits.",
+      buttonText: "Track Expiries",
+      path: "/feature/food-expiry",
+      author: "Jason"
+    },
+    {
+      title: "Plastic-Free Packaging Swapper",
+      icon: <ShoppingBag className="h-8 w-8 text-blue-600 mb-3" />,
+      description: "For 5-7 days, buy foods with low-waste or no plastic packaging. Log packaging types, see your score for choosing low-waste options, and track your swaps.",
+      goal: "Take photos of old vs. new choices, show receipts or fridge photos of lower-waste options.",
+      buttonText: "Log Packaging",
+      path: "/feature/packaging-swap",
+      author: "Aryan"
+    },
+    {
+      title: "Food Waste Logger",
+      icon: <Trash2 className="h-8 w-8 text-red-600 mb-3" />,
+      description: "Log what you served and what was left uneaten. Automatically calculates percentage wasted and total food waste over time. Get encouragement and aim for a 'Clean Plate' streak!",
+      goal: "Graph your food waste trend over 5-7 days.",
+      buttonText: "Log Food Waste",
+      path: "/feature/waste-tracker",
+      author: "Parth"
+    }
+  ];
+
   return (
-    <div className="container mx-auto p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <Button onClick={handleSignOut} variant="outline">Sign Out</Button>
-      </div>
-      
-      <p className="text-lg mb-4">
-        Welcome, {user?.email}!
-      </p>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-        <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
-          <h3 className="font-semibold text-lg mb-2">Pantry Items</h3>
-          <p className="text-gray-600">Manage your pantry inventory</p>
-          <Button className="mt-4">View Pantry</Button>
+    <div className="min-h-screen bg-gradient-to-b from-green-50 to-gray-100 py-8">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-10 pb-4 border-b border-gray-300">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">Dashboard</h1>
+            <p className="text-lg text-gray-600 mt-1">Welcome back, {user?.email?.split('@')[0] || 'User'}!</p>
+          </div>
+          <Button onClick={handleSignOut} variant="outline" className="mt-4 sm:mt-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+            Sign Out
+          </Button>
         </div>
-        
-        <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
-          <h3 className="font-semibold text-lg mb-2">Expiring Soon</h3>
-          <p className="text-gray-600">Items that need to be used soon</p>
-          <Button className="mt-4">Check Items</Button>
-        </div>
-        
-        <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
-          <h3 className="font-semibold text-lg mb-2">Shopping List</h3>
-          <p className="text-gray-600">Plan your next grocery run</p>
-          <Button className="mt-4">View List</Button>
-        </div>
+
+        <section className="mb-12 p-6 bg-white shadow-xl rounded-xl border border-gray-200">
+          <h2 className="text-2xl font-semibold text-gray-700 mb-4">Your Food Waste Insights</h2>
+          <div className="text-center text-gray-500 py-10 border-2 border-dashed border-gray-300 rounded-lg">
+            <BarChart2 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-lg">Detailed charts and graphs on your food usage and waste will appear here soon!</p>
+            <p className="text-sm">Track your progress and identify areas for improvement.</p>
+          </div>
+        </section>
+
+        <section className="mb-12 p-6 bg-white shadow-xl rounded-xl border border-gray-200">
+          <h2 className="text-2xl font-semibold text-gray-700 mb-4">What's In Your Fridge?</h2>
+          <div className="text-center text-gray-500 py-10 border-2 border-dashed border-gray-300 rounded-lg">
+            <ShoppingBag className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-lg">A list of your currently tracked food items will be displayed here.</p>
+            <p className="text-sm">Quickly see what you have and what needs attention.</p>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-semibold text-gray-800 mb-8 text-center">Explore Features</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {features.map((feature) => (
+              <div key={feature.title} className="bg-white shadow-2xl rounded-xl border border-gray-200 flex flex-col overflow-hidden hover:shadow-green-200/50 transition-shadow duration-300">
+                <div className="p-6 flex-grow">
+                  <div className="flex items-center justify-center mb-4 w-16 h-16 rounded-full bg-gray-100 mx-auto">
+                     {feature.icon}
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-3 text-center">{feature.title}</h3>
+                  <p className="text-gray-600 text-sm mb-3 leading-relaxed">{feature.description}</p>
+                  <p className="text-xs text-gray-500 italic mb-4">"{feature.goal}" - {feature.author}</p>
+                </div>
+                <div className="p-6 bg-gray-50 border-t border-gray-200">
+                  <Button 
+                    onClick={() => navigate(feature.path)} 
+                    className="w-full bg-green-600 hover:bg-green-700 text-white transition-colors group"
+                  >
+                    {feature.buttonText}
+                    <ChevronRight className="h-5 w-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
       </div>
     </div>
   );
