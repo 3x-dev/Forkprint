@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/logo";
@@ -6,7 +7,6 @@ import { Clock, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Hero } from "@/components/landing/Hero";
 import { Features } from "@/components/landing/Features";
-import { Testimonial } from "@/components/landing/Testimonial";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -15,7 +15,6 @@ const Index = () => {
     <div className="min-h-screen bg-white">
       <Hero />
       <Features />
-      <Testimonial />
       
       <footer className="bg-white">
         <div className="mx-auto max-w-7xl px-6 py-12 md:flex md:items-center md:justify-between lg:px-8">
