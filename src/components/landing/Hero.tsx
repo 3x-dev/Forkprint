@@ -1,10 +1,11 @@
-
 import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Apple, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export function Hero() {
   const { signInWithGoogle, user } = useAuthContext();
+  const navigate = useNavigate();
   
   return (
     <div className="relative overflow-hidden bg-white">
@@ -50,7 +51,7 @@ export function Hero() {
               </Button>
             ) : (
               <Button 
-                onClick={() => window.location.href = '/dashboard'} 
+                onClick={() => navigate('/dashboard')}
                 className="flex items-center gap-2 rounded-full px-6 py-6 text-base font-semibold shadow-lg hover:bg-green-600 transition-all duration-200 bg-green-500"
               >
                 Go to Dashboard
