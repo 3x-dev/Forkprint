@@ -1,26 +1,118 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
 
-const Navbar: React.FC = () => {
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuthContext } from "@/components/auth/AuthProvider";
+import { Button } from "@/components/ui/button";
+import { Menu, X } from "lucide-react";
+
+const Navbar = () => {
+  const { user, signOut } = useAuthContext();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const toggleMenu = () => {
+    setIsMenuOpen(!isMenuOpen);
+  };
+
   return (
-    <nav className="bg-gray-800 text-white p-4">
-      <div className="container mx-auto flex justify-between items-center">
-        <Link to="/" className="text-xl font-bold">Smart Sort Game</Link>
-        <ul className="flex space-x-4">
-          <li><Link to="/" className="hover:text-gray-300">Smart Sort</Link></li>
-          <li><Link to="/about" className="hover:text-gray-300">About</Link></li>
-          <li className="relative group">
-            <span className="hover:text-gray-300 cursor-pointer">Features</span>
-            <ul className="absolute hidden group-hover:block bg-gray-700 text-white mt-2 py-2 rounded shadow-lg w-48">
-              <li><Link to="/features/food-tracking" className="block px-4 py-2 hover:bg-gray-600">Food Tracking</Link></li>
-              <li><Link to="/features/feature2" className="block px-4 py-2 hover:bg-gray-600">Feature 2</Link></li>
-              <li><Link to="/features/feature3" className="block px-4 py-2 hover:bg-gray-600">Feature 3</Link></li>
-            </ul>
-          </li>
-        </ul>
+    <nav className="bg-white shadow-sm border-b border-gray-200">
+      <div className="container mx-auto px-4">
+        <div className="flex justify-between items-center h-16">
+          <div className="flex items-center">
+            <Link to="/" className="flex-shrink-0 flex items-center">
+              <span className="text-xl font-bold text-green-600">APES Food</span>
+            </Link>
+          </div>
+          
+          {/* Desktop Navigation */}
+          <div className="hidden md:block">
+            <div className="ml-10 flex items-center space-x-4">
+              <Link to="/" className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50">
+                Home
+              </Link>
+              
+              {user ? (
+                <>
+                  <Link to="/dashboard" className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50">
+                    Dashboard
+                  </Link>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => signOut()} 
+                    className="ml-4"
+                  >
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <Button 
+                  onClick={() => window.location.href = '/'} 
+                  className="ml-4"
+                  variant="outline"
+                >
+                  Sign In
+                </Button>
+              )}
+            </div>
+          </div>
+          
+          {/* Mobile menu button */}
+          <div className="md:hidden">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
+              aria-controls="mobile-menu"
+              aria-expanded="false"
+              onClick={toggleMenu}
+            >
+              <span className="sr-only">Open main menu</span>
+              {isMenuOpen ? <X className="block h-6 w-6" /> : <Menu className="block h-6 w-6" />}
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Mobile menu */}
+      {isMenuOpen && (
+        <div className="md:hidden" id="mobile-menu">
+          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+            <Link to="/" 
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Home
+            </Link>
+            
+            {user ? (
+              <>
+                <Link to="/dashboard" 
+                  className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Dashboard
+                </Link>
+                <button
+                  className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+                  onClick={() => {
+                    signOut();
+                    setIsMenuOpen(false);
+                  }}
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <Link to="/" 
+                className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Sign In
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </nav>
   );
 };
 
-export default Navbar; 
+export default Navbar;
