@@ -112,7 +112,7 @@ export function Hero() {
             className="mt-6 text-lg leading-8 text-gray-600 animate-fade-in"
             style={{ animationDelay: "400ms" }}
           >
-            Track expiration dates, reduce waste, and make the most of your groceries with Forkprint.
+            Track food expiration dates, reduce food waste, and make the most of your groceries with Forkprint.
           </p>
           
           <div 

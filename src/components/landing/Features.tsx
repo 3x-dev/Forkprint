@@ -3,15 +3,15 @@ import { CheckCircle2 } from "lucide-react";
 const features = [
   {
     name: 'Food Expiry',
-    description: `Track food expiration dates with reminders and composting guidance to reduce waste.`,
+    description: `Track food expiration dates with reminders and composting guidance to reduce food waste.`,
   },
   {
     name: 'Plastic-Free Packaging Swapping',
-    description: `Log your packaging choices and track your progress towards using less plastic.`,
+    description: `Log your packaging choices and track your progress towards using less high waste packaging.`,
   },
   {
     name: 'Food Waste Tracker',
-    description: `Monitor your food consumption, calculate waste, and get tips to improve your habits.`,
+    description: `Monitor your food consumption, calculate food waste, and get tips to improve your habits.`,
   },
 ];
 
@@ -39,7 +39,7 @@ export function Features() {
             Manage Your Food, Minimize Your Waste
           </p>
           <p className="mt-6 text-lg leading-8 text-gray-600">
-            Our app helps you reduce food waste, save money, and ensure you always have what you need, smartly.
+            Forkprint helps you reduce food waste, save money, and ensure you always have what you need, smartly.
           </p>
         </div>
         <div className="mx-auto mt-16 max-w-2xl sm:mt-20 lg:mt-24 lg:max-w-5xl">
