@@ -1,12 +1,44 @@
 import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { BarChart2, ShoppingBag, Trash2, ChevronRight } from "lucide-react";
+import { BarChart2, ShoppingBag, Trash2, ChevronRight, Package } from "lucide-react";
 import * as React from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import FridgeDisplay, { FoodItem } from "@/components/dashboard/FridgeDisplay";
 
 const Dashboard = () => {
   const { user, signOut } = useAuthContext();
   const navigate = useNavigate();
+  const [fridgeItems, setFridgeItems] = useState<FoodItem[]>([]);
+  const [isLoadingFridge, setIsLoadingFridge] = useState(true);
+
+  useEffect(() => {
+    const fetchFridgeContents = async () => {
+      if (!user) {
+        setIsLoadingFridge(false);
+        return;
+      }
+      setIsLoadingFridge(true);
+      try {
+        const { data, error } = await supabase
+          .from('food_items')
+          .select('id, name, expiry_date, image_url, amount')
+          .eq('user_id', user.id)
+          .order('expiry_date', { ascending: true });
+
+        if (error) throw error;
+        setFridgeItems(data || []);
+      } catch (error) {
+        console.error("Error fetching fridge contents for dashboard:", error);
+        setFridgeItems([]);
+      } finally {
+        setIsLoadingFridge(false);
+      }
+    };
+
+    fetchFridgeContents();
+  }, [user]);
 
   const handleSignOut = async () => {
     const { error } = await signOut();
@@ -45,6 +77,10 @@ const Dashboard = () => {
     }
   ];
 
+  const handleNavigateToTracker = () => {
+    navigate("/feature/food-expiry");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-gray-100 py-8">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -65,12 +101,23 @@ const Dashboard = () => {
         </section>
 
         <section className="mb-12 p-6 bg-white shadow-xl rounded-xl border border-gray-200">
-          <h2 className="text-2xl font-semibold text-gray-700 mb-4">What's In Your Fridge?</h2>
-          <div className="text-center text-gray-500 py-10 border-2 border-dashed border-gray-300 rounded-lg">
-            <ShoppingBag className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-lg">A list of your currently tracked food items will be displayed here.</p>
-            <p className="text-sm">Quickly see what you have and what needs attention.</p>
-          </div>
+          <h2 className="text-2xl font-semibold text-gray-700 mb-6 text-center">What's In Your Fridge?</h2>
+          <FridgeDisplay 
+            items={fridgeItems} 
+            isLoading={isLoadingFridge} 
+            onNavigateToTracker={handleNavigateToTracker} 
+          />
+          { !isLoadingFridge && fridgeItems.length > 0 && (
+            <div className="text-center mt-6">
+              <Button 
+                onClick={handleNavigateToTracker} 
+                variant="outline" 
+                className="border-green-600 text-green-600 hover:bg-green-50 hover:text-green-700"
+              >
+                Manage Items in Tracker <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          )}
         </section>
 
         <section>

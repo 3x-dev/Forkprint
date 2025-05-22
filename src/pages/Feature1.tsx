@@ -136,6 +136,7 @@ const FoodExpiryPage: React.FC = () => {
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
   const [lastFreshFetchTime, setLastFreshFetchTime] = useState<number | null>(null);
   const [initialCacheLoadAttempted, setInitialCacheLoadAttempted] = useState(false);
+  const [expiredItems, setExpiredItems] = useState<FoodItem[]>([]);
 
   // Fetch food items from Supabase
   const fetchFridgeItems = async () => {
@@ -261,6 +262,17 @@ const FoodExpiryPage: React.FC = () => {
     }
   }, [selectedCalendarDate, fridgeItems]);
   
+  // useEffect to update expiredItems list
+  useEffect(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentlyExpired = fridgeItems.filter(item => {
+      const expiry = new Date(item.expiry_date + 'T00:00:00');
+      return expiry < today;
+    }).sort((a,b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime()); // Show oldest expired first
+    setExpiredItems(currentlyExpired);
+  }, [fridgeItems]);
+
   // Notification Logic (runs when fridgeItems are loaded/changed)
   useEffect(() => {
     const today = new Date();
@@ -617,6 +629,45 @@ const FoodExpiryPage: React.FC = () => {
                     {!SPOONACULAR_API_KEY && <p className="text-xs text-red-500 mt-1">Image fetching disabled.</p>}
                 </CardContent>
             </Card>
+
+            {/* Expired Items Section */}
+            {expiredItems.length > 0 && (
+              <Card className="border-red-500 bg-red-50">
+                <CardHeader>
+                  <CardTitle className="text-red-700">Expired Items ({expiredItems.length})</CardTitle>
+                  <CardDescription className="text-red-600">These items have passed their expiry date. Please check and dispose of them properly.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[150px]"> {/* Max height for scroll */}
+                    <ul className="space-y-2">
+                      {expiredItems.map(item => {
+                        const expiry = new Date(item.expiry_date + 'T00:00:00');
+                        const today = new Date();
+                        today.setHours(0,0,0,0);
+                        const daysPast = Math.floor((today.getTime() - expiry.getTime()) / (1000 * 60 * 60 * 24));
+
+                        return (
+                          <li key={item.id} className="text-sm flex items-center p-1.5 border-b border-red-200 last:border-b-0">
+                            {item.image_url ? (
+                              <img src={item.image_url} alt={item.name} className="h-8 w-8 mr-2 rounded object-cover" />
+                            ) : (
+                              <ImageOff className="h-8 w-8 mr-2 text-red-400" />
+                            )}
+                            <div>
+                              <span className="font-medium text-red-700">{item.name}</span>
+                              {item.amount && <span className="text-xs text-red-500 ml-1">({item.amount})</span>}
+                              <p className="text-xs text-red-500">
+                                Expired {daysPast === 0 ? 'today' : `${daysPast} day${daysPast > 1 ? 's' : ''} ago`} (on {expiry.toLocaleDateString()})
+                              </p>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Display items for selected calendar date */}
             <Card>
