@@ -454,12 +454,17 @@ const PackagingSwapPage = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <Link to="/dashboard" className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-4">
-        <ArrowLeft className="h-4 w-4 mr-1" />
-        Back to Dashboard
-      </Link>
-      <h1 className="text-3xl font-bold mb-2">Plastic-Free Packaging Swapper</h1>
+    <div className="container mx-auto p-4 md:p-8">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold">Plastic-Free Packaging Swapper</h1>
+        <Link to="/dashboard">
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </Link>
+      </div>
+
       <p className="text-gray-600 mb-6">
         Try to buy foods with low-waste or no plastic packaging. Log your purchases below.
       </p>

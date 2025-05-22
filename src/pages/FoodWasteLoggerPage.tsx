@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthContext } from '@/components/auth/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { PlusCircle, Trash2, BarChart, Utensils } from 'lucide-react';
+import { PlusCircle, Trash2, BarChart, Utensils, ArrowLeft } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Interface for a food serving
@@ -46,6 +47,11 @@ interface WasteEntry {
   created_at: string;
 }
 
+// Define a type for the portion object as returned by Supabase join
+interface PortionFromSupabase extends ServedPortion {
+  food_waste_entries?: WasteEntry[];
+}
+
 // Combined interface for displaying in the UI
 interface FoodWasteLogEntry {
   serving: FoodServing;
@@ -73,6 +79,15 @@ const disposalMethods = [
   "General Waste",
   "Fed to pets",
   "Saved for later",
+  "Other"
+];
+
+const mealTypes = [
+  "Breakfast",
+  "Brunch",
+  "Lunch",
+  "Dinner",
+  "Snack",
   "Other"
 ];
 
@@ -111,56 +126,51 @@ const FoodWasteLoggerPage: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // Fetch food servings
+      // Fetch food servings with related portions and waste entries
       const { data: servingsData, error: servingsError } = await supabase
-        .from('FoodServings')
-        .select('*')
+        .from('food_servings')
+        .select(`
+          *,
+          served_portions (
+            *,
+            food_waste_entries (*)
+          )
+        `)
         .eq('user_id', user.id)
         .order('served_at', { ascending: false });
       
-      if (servingsError) throw servingsError;
-      
-      // Fetch portions for each serving
-      const logEntries: FoodWasteLogEntry[] = [];
-      
-      for (const serving of (servingsData || [])) {
-        const { data: portionsData, error: portionsError } = await supabase
-          .from('ServedPortions')
-          .select('*')
-          .eq('serving_id', serving.id);
-          
-        if (portionsError) throw portionsError;
-        
-        // For each portion, fetch waste entry if exists
-        const portionsWithWaste = await Promise.all((portionsData || []).map(async (portion) => {
-          const { data: wasteData, error: wasteError } = await supabase
-            .from('FoodWasteEntries')
-            .select('*')
-            .eq('served_portion_id', portion.id)
-            .maybeSingle();
-            
-          if (wasteError) throw wasteError;
-          
-          return {
-            ...portion,
-            waste: wasteData || undefined
-          };
-        }));
-        
-        logEntries.push({
-          serving: serving as FoodServing,
-          portions: portionsWithWaste as (ServedPortion & { waste?: WasteEntry })[]
-        });
+      if (servingsError) {
+        console.error("Error fetching food servings:", servingsError);
+        throw new Error(`Servings Error: ${servingsError.message}`);
       }
       
-      setFoodServings(logEntries);
+      const logEntries: FoodWasteLogEntry[] = (servingsData || []).map(serving => {
+        const portionsWithWaste = (serving.served_portions || []).map((portion: PortionFromSupabase) => ({
+          ...portion,
+          waste: portion.food_waste_entries && portion.food_waste_entries.length > 0 ? portion.food_waste_entries[0] : undefined // Assuming one waste entry per portion for simplicity, adjust if needed
+        }));
+        return {
+          serving: {
+            id: serving.id,
+            user_id: serving.user_id,
+            meal_name: serving.meal_name,
+            served_at: serving.served_at,
+            notes: serving.notes,
+            created_at: serving.created_at,
+          } as FoodServing,
+          portions: portionsWithWaste as (ServedPortion & { waste?: WasteEntry })[]
+        };
+      });
       
-      // Generate waste summary data
-      generateWasteSummaryData(logEntries);
+      setFoodServings(logEntries);
+      generateWasteSummaryData(logEntries); // Ensure this function can handle the new structure if it also changed
       
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error("Failed to fetch food waste data.", { description: errorMessage });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error fetching food waste data.';
+      console.error("Detailed error in fetchFoodServings:", error);
+      toast.error("Failed to fetch food waste data.", { 
+        description: errorMessage 
+      });
     } finally {
       setIsLoading(false);
     }
@@ -247,7 +257,7 @@ const FoodWasteLoggerPage: React.FC = () => {
     try {
       // 1. Create the serving
       const { data: servingData, error: servingError } = await supabase
-        .from('FoodServings')
+        .from('food_servings')
         .insert({
           user_id: user.id,
           meal_name: mealName,
@@ -262,7 +272,7 @@ const FoodWasteLoggerPage: React.FC = () => {
       // 2. Create each portion
       for (const portion of portions) {
         const { error: portionError } = await supabase
-          .from('ServedPortions')
+          .from('served_portions')
           .insert({
             serving_id: servingData.id,
             user_id: user.id,
@@ -332,7 +342,7 @@ const FoodWasteLoggerPage: React.FC = () => {
         
         // Check if entry already exists
         const { data: existingEntry } = await supabase
-          .from('FoodWasteEntries')
+          .from('food_waste_entries')
           .select('id')
           .eq('served_portion_id', entry.portionId)
           .maybeSingle();
@@ -340,7 +350,7 @@ const FoodWasteLoggerPage: React.FC = () => {
         if (existingEntry) {
           // Update existing entry
           const { error } = await supabase
-            .from('FoodWasteEntries')
+            .from('food_waste_entries')
             .update({
               quantity_wasted_as_fraction_of_served: fraction,
               user_waste_description: entry.description || null,
@@ -353,7 +363,7 @@ const FoodWasteLoggerPage: React.FC = () => {
         } else {
           // Create new entry
           const { error } = await supabase
-            .from('FoodWasteEntries')
+            .from('food_waste_entries')
             .insert({
               served_portion_id: entry.portionId,
               user_id: user.id,
@@ -409,9 +419,79 @@ const FoodWasteLoggerPage: React.FC = () => {
     return `You only consumed ${Math.round(consumedPercentage)}% of your food. Let's try to reduce waste next time!`;
   };
   
+  // Handle deleting a meal
+  const handleDeleteMeal = async (servingId: string) => {
+    if (!user) return;
+
+    const mealToDelete = foodServings.find(entry => entry.serving.id === servingId);
+    if (!mealToDelete) {
+      toast.error("Meal not found.");
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete the meal "${mealToDelete.serving.meal_name}"? This will also delete all its associated portions and waste logs.`
+    );
+
+    if (!confirmDelete) return;
+
+    setIsLoading(true);
+
+    try {
+      // 1. Get all served_portion_ids for the serving
+      const portionIds = mealToDelete.portions.map(p => p.id);
+
+      // 2. Delete all food_waste_entries associated with these portions
+      if (portionIds.length > 0) {
+        const { error: deleteWasteError } = await supabase
+          .from('food_waste_entries')
+          .delete()
+          .in('served_portion_id', portionIds)
+          .eq('user_id', user.id);
+        if (deleteWasteError) throw new Error(`Error deleting waste entries: ${deleteWasteError.message}`);
+      }
+
+      // 3. Delete all served_portions associated with the serving
+      const { error: deletePortionsError } = await supabase
+        .from('served_portions')
+        .delete()
+        .eq('serving_id', servingId)
+        .eq('user_id', user.id);
+      if (deletePortionsError) throw new Error(`Error deleting portions: ${deletePortionsError.message}`);
+
+      // 4. Delete the food_serving itself
+      const { error: deleteServingError } = await supabase
+        .from('food_servings')
+        .delete()
+        .eq('id', servingId)
+        .eq('user_id', user.id);
+      if (deleteServingError) throw new Error(`Error deleting serving: ${deleteServingError.message}`);
+
+      toast.success(`Meal "${mealToDelete.serving.meal_name}" and all associated data deleted successfully!`);
+
+      // Refresh data
+      fetchFoodServings();
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error deleting meal.';
+      console.error("Detailed error in handleDeleteMeal:", error);
+      toast.error("Failed to delete meal.", { description: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   return (
     <div className="container mx-auto p-4 md:p-8">
-      <h1 className="text-3xl font-bold mb-6">Food Waste Logger</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold">Food Waste Logger</h1>
+        <Link to="/dashboard">
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </Link>
+      </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Add Meal Form */}
@@ -426,12 +506,19 @@ const FoodWasteLoggerPage: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="meal-name">Meal Name</Label>
-                <Input 
-                  id="meal-name" 
+                <Select 
                   value={mealName} 
-                  onChange={(e) => setMealName(e.target.value)}
-                  placeholder="e.g., Lunch, Dinner, Burrito Bowl"
-                />
+                  onValueChange={(value) => setMealName(value)}
+                >
+                  <SelectTrigger id="meal-name">
+                    <SelectValue placeholder="Select meal type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mealTypes.map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               
               <div>
@@ -608,23 +695,28 @@ const FoodWasteLoggerPage: React.FC = () => {
                     )}
                   </div>
                   
-                  <div className="mt-2 md:mt-0">
+                  <div className="mt-2 md:mt-0 flex items-center gap-2">
                     {/* Display waste percentage if available */}
                     {entry.portions.some(p => p.waste) && (
-                      <div className="flex items-center gap-2">
-                        <div className="text-sm">
-                          Waste: <span className="font-medium">{calculateWastePercentage(entry)?.toFixed(1)}%</span>
-                        </div>
+                      <div className="text-sm">
+                        Waste: <span className="font-medium">{calculateWastePercentage(entry)?.toFixed(1)}%</span>
                       </div>
                     )}
                     
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="mt-2"
                       onClick={() => handleSelectServingForWaste(entry.serving.id)}
                     >
                       {entry.portions.some(p => p.waste) ? 'Edit Waste Log' : 'Log Waste'}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDeleteMeal(entry.serving.id)}
+                      disabled={isLoading}
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>

@@ -23,34 +23,40 @@ The feature uses:
 ## Database Schema
 ```sql
 -- FoodServings Table
-CREATE TABLE FoodServings (
+CREATE TABLE public.food_servings (
     id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     meal_name TEXT NOT NULL,
-    served_at TIMESTAMPTZ,
-    notes TEXT
+    served_at TIMESTAMPTZ DEFAULT NOW(),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ServedPortions Table
-CREATE TABLE ServedPortions (
+CREATE TABLE public.served_portions (
     id UUID PRIMARY KEY,
-    serving_id UUID REFERENCES FoodServings(id),
-    user_id UUID NOT NULL,
+    serving_id UUID REFERENCES public.food_servings(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     custom_food_item_name TEXT NOT NULL,
     quantity_served NUMERIC NOT NULL,
     unit_served TEXT NOT NULL,
-    description TEXT
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- FoodWasteEntries Table
-CREATE TABLE FoodWasteEntries (
+CREATE TABLE public.food_waste_entries (
     id UUID PRIMARY KEY,
-    served_portion_id UUID REFERENCES ServedPortions(id),
-    user_id UUID NOT NULL,
+    served_portion_id UUID REFERENCES public.served_portions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     quantity_wasted_as_fraction_of_served NUMERIC NOT NULL,
     user_waste_description TEXT,
     waste_reason TEXT,
-    disposal_action_taken TEXT
+    disposal_action_taken TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
