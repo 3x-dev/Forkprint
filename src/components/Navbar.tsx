@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
+import { Logo } from "./logo";
 
 const Navbar = () => {
   const { user, signOut, signInWithGoogle } = useAuthContext();
@@ -17,9 +18,7 @@ const Navbar = () => {
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
-            <Link to="/" className="flex-shrink-0 flex items-center">
-              <span className="text-xl font-bold text-green-600">Forkprint</span>
-            </Link>
+            <Logo size="md" />
           </div>
           
           {/* Desktop Navigation */}
