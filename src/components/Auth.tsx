@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { supabase } from '@/integrations/supabase/client'; // Adjust path if necessary
 
 const Auth: React.FC = () => {

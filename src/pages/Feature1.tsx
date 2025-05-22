@@ -118,6 +118,9 @@ const parseRecipesMarkdown = (markdown: string, source: 'api' | 'cache', cachedA
     return recipes;
 };
 
+const FRESH_FETCH_COOLDOWN_MS = 30000; // 30 seconds cooldown for fresh fetches
+const MAX_INGREDIENTS_FOR_LLM = 15; // Max ingredients to send to LLM
+
 const FoodExpiryPage: React.FC = () => {
   const { user } = useAuthContext();
   const [itemName, setItemName] = useState('');
@@ -131,11 +134,14 @@ const FoodExpiryPage: React.FC = () => {
   const [suggestedRecipesList, setSuggestedRecipesList] = useState<RecipeDetail[]>([]);
   const [isFetchingRecipes, setIsFetchingRecipes] = useState(false);
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
+  const [lastFreshFetchTime, setLastFreshFetchTime] = useState<number | null>(null);
+  const [initialCacheLoadAttempted, setInitialCacheLoadAttempted] = useState(false);
 
   // Fetch food items from Supabase
   const fetchFridgeItems = async () => {
     if (!user) return;
     setIsLoading(true);
+    setInitialCacheLoadAttempted(false); // Reset when fetching new fridge items
     try {
       const { data, error } = await supabase
         .from('food_items') // This will be type-safe after type generation
@@ -148,6 +154,7 @@ const FoodExpiryPage: React.FC = () => {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       toast.error("Failed to fetch fridge items.", { description: errorMessage });
+      setFridgeItems([]); // Ensure fridgeItems is an array on error
     } finally {
       setIsLoading(false);
     }
@@ -169,6 +176,79 @@ const FoodExpiryPage: React.FC = () => {
     }
     fetchFridgeItems();
   }, [user]); // Re-fetch if user changes
+
+  // useEffect to load cached recipes when fridgeItems or user changes
+  useEffect(() => {
+    const loadInitialCachedRecipes = async () => {
+        if (!user || fridgeItems.length === 0 || isLoading || !OPENROUTER_API_KEY || initialCacheLoadAttempted) {
+            // Don't load if no user, no items, main data is loading, no API key for suggestions, or already attempted
+            if (fridgeItems.length === 0 && !isLoading) setInitialCacheLoadAttempted(true); // Mark as attempted if fridge is empty and not loading
+            return;
+        }
+
+        // Prevent re-triggering if fetchingRecipes is already true from a manual click
+        if (isFetchingRecipes) return; 
+
+        const nonExpiredItems = fridgeItems.filter(item => {
+            const expiry = new Date(item.expiry_date + 'T00:00:00');
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return expiry >= today;
+        });
+
+        if (nonExpiredItems.length === 0) {
+            setSuggestedRecipesList([]); // Clear if no non-expired items
+            setInitialCacheLoadAttempted(true);
+            return;
+        }
+        
+        let itemNamesArray = nonExpiredItems.map(item => item.name);
+        // Apply the same MAX_INGREDIENTS_FOR_LLM logic for cache key consistency
+        if (itemNamesArray.length > MAX_INGREDIENTS_FOR_LLM) {
+            itemNamesArray = itemNamesArray.slice(0, MAX_INGREDIENTS_FOR_LLM);
+        }
+        const currentIngredientsKey = generateIngredientsKey(itemNamesArray);
+
+        // console.log("Attempting to load initial cached recipes for key:", currentIngredientsKey);
+        // setIsFetchingRecipes(true); // Indicate loading for recipes, even if cached
+        try {
+            const { data: cachedData, error: cacheError } = await supabase
+                .from('recipe_suggestions')
+                .select('recipes_markdown, created_at')
+                .eq('user_id', user.id)
+                .eq('ingredients_key', currentIngredientsKey)
+                .maybeSingle();
+
+            setInitialCacheLoadAttempted(true); // Mark that we've tried
+
+            if (cacheError) {
+                 console.error("Error fetching initial cached recipes:", cacheError.message);
+                 // Don't throw, just means no cache or DB error
+            }
+
+            if (cachedData) {
+                // console.log("Found initial cached recipes:", cachedData);
+                const parsedCache = parseRecipesMarkdown(cachedData.recipes_markdown, 'cache', new Date(cachedData.created_at).toLocaleDateString());
+                setSuggestedRecipesList(parsedCache);
+                toast.info("Previously suggested recipes loaded from cache.", {duration: 4000});
+            } else {
+                // console.log("No initial cached recipes found for this set of ingredients.");
+                setSuggestedRecipesList([]); // Ensure list is empty if no cache
+            }
+        } catch (error) {
+            console.error("Unexpected error fetching initial cached recipes:", error);
+            setSuggestedRecipesList([]);
+        } finally {
+            // setIsFetchingRecipes(false);
+        }
+    };
+    
+    // Only run if fridgeItems have been loaded (isLoading is false) and user exists
+    if (!isLoading && user && fridgeItems) {
+        loadInitialCachedRecipes();
+    }
+
+  }, [fridgeItems, user, isLoading, OPENROUTER_API_KEY]); // Depend on fridgeItems, user, and isLoading
 
   // Update items for selected calendar date
   useEffect(() => {
@@ -363,7 +443,16 @@ const FoodExpiryPage: React.FC = () => {
       return;
     }
 
-    const nonExpiredItems = fridgeItems.filter(item => {
+    if (fetchNew) {
+      const now = Date.now();
+      if (lastFreshFetchTime && (now - lastFreshFetchTime < FRESH_FETCH_COOLDOWN_MS)) {
+        const remainingCooldown = Math.ceil((FRESH_FETCH_COOLDOWN_MS - (now - lastFreshFetchTime)) / 1000);
+        toast.info(`Please wait ${remainingCooldown}s before fetching fresh recipes again.`);
+        return;
+      }
+    }
+
+    let nonExpiredItems = fridgeItems.filter(item => {
       const expiry = new Date(item.expiry_date + 'T00:00:00');
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -372,41 +461,45 @@ const FoodExpiryPage: React.FC = () => {
 
     if (nonExpiredItems.length === 0) {
       toast.info("No non-expired items in your fridge!", { description: "Add some items to get recipe suggestions." });
-      setSuggestedRecipesList([]); // Clear list if no items
+      setSuggestedRecipesList([]);
       return;
     }
 
-    setIsFetchingRecipes(true);
-    const itemNamesArray = nonExpiredItems.map(item => item.name);
-    const currentIngredientsKey = generateIngredientsKey(itemNamesArray);
+    let itemNamesArray = nonExpiredItems.map(item => item.name);
+    if (itemNamesArray.length > MAX_INGREDIENTS_FOR_LLM) {
+      toast.info(`Showing recipes for the first ${MAX_INGREDIENTS_FOR_LLM} non-expired items to optimize suggestions.`, {duration: 6000});
+      itemNamesArray = itemNamesArray.slice(0, MAX_INGREDIENTS_FOR_LLM);
+      nonExpiredItems = nonExpiredItems.slice(0, MAX_INGREDIENTS_FOR_LLM); 
+    }
+    
+    setIsFetchingRecipes(true); // Set true when actively fetching (cache or API)
+    const currentIngredientsKey = generateIngredientsKey(itemNamesArray); 
 
-    // 1. Try to fetch from Supabase cache if not explicitly fetching new
-    if (!fetchNew) {
+    if (!fetchNew) { // Try cache first if not forcing new
         try {
             const { data: cachedData, error: cacheError } = await supabase
                 .from('recipe_suggestions')
                 .select('recipes_markdown, created_at')
                 .eq('user_id', user!.id)
                 .eq('ingredients_key', currentIngredientsKey)
-                .maybeSingle(); // Use maybeSingle to not error if no rows found
+                .maybeSingle();
 
-            if (cacheError) throw cacheError; // Throw other errors
+            if (cacheError) throw cacheError;
 
             if (cachedData) {
                 toast.success("Loaded cached recipe suggestions!");
                 const parsedCache = parseRecipesMarkdown(cachedData.recipes_markdown, 'cache', new Date(cachedData.created_at).toLocaleDateString());
                 setSuggestedRecipesList(parsedCache);
-                setIsFetchingRecipes(false);
+                setIsFetchingRecipes(false); // Done fetching
                 return; 
             }
         } catch (error) {
-            console.error("Error fetching cached recipes:", error);
-            // Proceed to API if cache fails for reasons other than "no rows"
+            console.error("Error fetching cached recipes during manual suggest:", error);
         }
     }
 
-    // 2. Fetch from OpenRouter API
-    toast.info(fetchNew ? "Fetching fresh recipes from AI..." : "No cached suggestions found. Fetching new recipes from AI...");
+    // Fetch from OpenRouter API
+    toast.info(fetchNew ? "Fetching fresh recipes from AI..." : "No cached suggestions for these items. Fetching new recipes from AI...");
     const itemNamesString = itemNamesArray.join(', ');
     const prompt = `
       You are a helpful assistant that suggests recipes.
@@ -428,63 +521,69 @@ const FoodExpiryPage: React.FC = () => {
       Ensure the recipes are relatively simple and common.
     `;
     try {
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': YOUR_SITE_URL,
-          'X-Title': YOUR_APP_NAME,
-        },
-        body: JSON.stringify({
-          model: 'deepseek/deepseek-chat',
-          messages: [
-            { role: 'system', content: 'You are a helpful recipe suggestion assistant.' },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 2000, 
-          temperature: 0.7,
-        }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("OpenRouter API Error:", errorData);
-        let errorMessage = `API request failed with status ${response.status}`;
-        if (errorData && errorData.error && errorData.error.message) errorMessage = errorData.error.message;
-        throw new Error(errorMessage);
-      }
+      const response = await fetch(OPENROUTER_API_URL, { 
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+                'HTTP-Referer': YOUR_SITE_URL,
+                'X-Title': YOUR_APP_NAME,
+            },
+            body: JSON.stringify({
+                model: 'deepseek/deepseek-chat',
+                messages: [
+                    { role: 'system', content: 'You are a helpful recipe suggestion assistant.' },
+                    { role: 'user', content: prompt },
+                ],
+                max_tokens: 2000, 
+                temperature: 0.7,
+            }),
+        });
+      if (!response.ok) { 
+            const errorData = await response.json();
+            console.error("OpenRouter API Error:", errorData);
+            let errorMessage = `API request failed with status ${response.status}`;
+            if (errorData && errorData.error && errorData.error.message) errorMessage = errorData.error.message;
+            throw new Error(errorMessage);
+        }
       const data = await response.json();
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
         const recipesMarkdown = data.choices[0].message.content;
         const newRecipes = parseRecipesMarkdown(recipesMarkdown, 'api');
         
-        // Prepend new recipes to the existing list if any, or set as new list
-        setSuggestedRecipesList(prevList => [...newRecipes, ...prevList.filter(r => r.source === 'cache')]); // Keep old cached ones if any, new ones on top
-        setExpandedRecipeId(null); // Collapse all after new fetch
+        setSuggestedRecipesList(prevList => {
+            const oldCachedRecipes = prevList.filter(r => r.source === 'cache' && r.id.startsWith('cache-')); // Ensure we only keep truly cached ones
+            return [...newRecipes, ...oldCachedRecipes];
+        });
+        setExpandedRecipeId(null); 
+        if (fetchNew) {
+          setLastFreshFetchTime(Date.now()); 
+        }
 
-        if (user) { // Save to Supabase (overwrite if same key exists)
+        if (user) { 
           const { error: upsertError } = await supabase
             .from('recipe_suggestions')
             .upsert({
               user_id: user.id,
               ingredients_key: currentIngredientsKey,
               recipes_markdown: recipesMarkdown,
-              created_at: new Date().toISOString(), // Ensure created_at is updated on upsert
+              created_at: new Date().toISOString(), 
             }, { onConflict: 'user_id, ingredients_key' });
           if (upsertError) { console.error("Error upserting recipe suggestion:", upsertError); toast.error("Could not cache recipes."); }
           else { toast.success("New recipes fetched and cached!"); }
         }
-      } else {
-        toast.info("AI couldn't come up with recipes this time. Try adjusting your items or try again.");
-        if (!fetchNew && suggestedRecipesList.length === 0) setSuggestedRecipesList([]); // Clear if no cache and no new
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-      console.error("Error fetching recipes:", error);
-      toast.error("Failed to fetch recipes.", { description: errorMessage });
-      if (!fetchNew && suggestedRecipesList.length === 0) setSuggestedRecipesList([]);
+      } else {  
+            toast.info("AI couldn't come up with recipes this time. Try adjusting your items or try again.");
+            // Only clear if no recipes were ever loaded or if this was a fresh fetch that failed to get new ones
+            if (suggestedRecipesList.length === 0 || fetchNew) setSuggestedRecipesList([]);
+        }
+    } catch (error) {  
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        console.error("Error fetching recipes:", error);
+        toast.error("Failed to fetch recipes.", { description: errorMessage });
+        if (suggestedRecipesList.length === 0 || fetchNew) setSuggestedRecipesList([]);
     } finally {
-      setIsFetchingRecipes(false);
+      setIsFetchingRecipes(false); // Ensure this is always called
     }
   };
 
@@ -582,37 +681,59 @@ const FoodExpiryPage: React.FC = () => {
         <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-semibold text-gray-700">Meal Ideas & Recipes</h2>
             <Button 
-              onClick={() => handleSuggestRecipes(true)} // Pass true to force fetch new
-              disabled={isFetchingRecipes || !OPENROUTER_API_KEY || fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0}
+              onClick={() => handleSuggestRecipes(true)} 
+              disabled={
+                isFetchingRecipes || 
+                !OPENROUTER_API_KEY || 
+                fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 ||
+                (lastFreshFetchTime && (Date.now() - lastFreshFetchTime < FRESH_FETCH_COOLDOWN_MS))
+              }
               variant="outline"
               size="sm"
+              title={
+                (lastFreshFetchTime && (Date.now() - lastFreshFetchTime < FRESH_FETCH_COOLDOWN_MS)) 
+                ? `Please wait ${Math.ceil((FRESH_FETCH_COOLDOWN_MS - (Date.now() - lastFreshFetchTime)) / 1000)}s`
+                : "Get fresh recipe ideas from AI (bypasses cache)"
+              }
             >
                 <Lightbulb className="h-4 w-4 mr-2" />
-                {isFetchingRecipes ? "Getting Fresh Ideas..." : "Get Fresh Recipe Ideas"}
+                {isFetchingRecipes ? "Fetching Recipes..." : "Get Fresh Recipe Ideas"}
             </Button>
         </div>
 
-        {(!OPENROUTER_API_KEY || fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0) && (
-            <Card className="bg-yellow-50 border-yellow-200">
+        {/* Placeholder/Status Messages Section */}
+        {suggestedRecipesList.length === 0 && !isFetchingRecipes && initialCacheLoadAttempted && !isLoading && (
+            <>
+                {OPENROUTER_API_KEY && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length > 0 && (
+                    <Card className="bg-gray-50 my-4">
+                        <CardContent className="pt-6 text-sm text-center text-gray-600">
+                            <ChefHat className="h-12 w-12 mx-auto text-gray-400 mb-2" />
+                            No recipes suggested yet for the current items. <br/>Consider clicking "Get Fresh Recipe Ideas" to generate some!
+                        </CardContent>
+                    </Card>
+                )}
+                {OPENROUTER_API_KEY && fridgeItems.length === 0 && (
+                    <Card className="bg-gray-50 my-4">
+                        <CardContent className="pt-6 text-sm text-center text-gray-600">
+                            <ChefHat className="h-10 w-10 mx-auto text-gray-300 mb-2" />
+                            Your fridge is empty. Add some items to get recipe ideas!
+                        </CardContent>
+                    </Card>
+                )}
+            </>
+        )}
+
+        {(!OPENROUTER_API_KEY || (fridgeItems.length > 0 && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 && !isLoading)) && (
+            <Card className="bg-yellow-50 border-yellow-200 my-4">
                 <CardContent className="pt-6 text-sm text-yellow-700">
                     {!OPENROUTER_API_KEY && <p>Recipe suggestions disabled: OpenRouter API key missing in settings.</p>}
-                    {OPENROUTER_API_KEY && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 &&
-                        <p>Add some non-expired items to your fridge to get recipe suggestions. First suggestions will be loaded when you add items and click the button above for the first time.</p>
+                    {OPENROUTER_API_KEY && fridgeItems.length > 0 && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 && !isLoading &&
+                        <p>You have items in your fridge, but all are expired. Add some non-expired items to get recipe suggestions.</p>
                     }
                 </CardContent>
             </Card>
         )}
         
-        {isFetchingRecipes && suggestedRecipesList.length === 0 && <p className="text-center text-gray-500 py-4">Fetching recipes...</p>}
-        {!isFetchingRecipes && suggestedRecipesList.length === 0 && OPENROUTER_API_KEY && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length > 0 &&
-            <Card className="bg-gray-50">
-                <CardContent className="pt-6 text-sm text-center text-gray-600">
-                    <ChefHat className="h-12 w-12 mx-auto text-gray-400 mb-2" />
-                    No recipes suggested yet for the current items. <br/>Click "Get Fresh Recipe Ideas" to generate some!
-                </CardContent>
-            </Card>
-        }
-
         {suggestedRecipesList.length > 0 && (
           <div className="space-y-4 mt-4">
             {suggestedRecipesList.map((recipe) => (
