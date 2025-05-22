@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/logo";
@@ -23,7 +22,7 @@ const Index = () => {
           </div>
           <div className="mt-8 md:order-1 md:mt-0">
             <p className="text-center text-xs leading-5 text-gray-500">
-              &copy; {new Date().getFullYear()} APES Food. All rights reserved.
+              &copy; {new Date().getFullYear()} Forkprint. All rights reserved.
             </p>
           </div>
         </div>

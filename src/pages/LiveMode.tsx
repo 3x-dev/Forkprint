@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -83,7 +82,7 @@ const LiveMode = () => {
   };
   
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-smartsort-light-green">
+    <div className="min-h-screen bg-gradient-to-b from-white to-forkprint-light-green">
       <header className="container mx-auto pt-6 pb-4 px-4 flex items-center justify-between">
         <Button 
           variant="ghost" 

@@ -1,4 +1,3 @@
-
 import { Recycle } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -16,9 +15,9 @@ export function Logo({ size = "md", asLink = true }: LogoProps) {
 
   const logoContent = (
     <div className="flex items-center gap-2">
-      <Recycle className={`text-smartsort-green ${size === "sm" ? "w-5 h-5" : size === "md" ? "w-6 h-6" : "w-7 h-7"}`} />
-      <span className={`font-bold ${sizeClasses[size]} bg-gradient-to-r from-smartsort-green to-smartsort-dark-green bg-clip-text text-transparent`}>
-        SmartSort
+      <Recycle className={`text-forkprint-green ${size === "sm" ? "w-5 h-5" : size === "md" ? "w-6 h-6" : "w-7 h-7"}`} />
+      <span className={`font-bold ${sizeClasses[size]} bg-gradient-to-r from-forkprint-green to-forkprint-dark-green bg-clip-text text-transparent`}>
+        Forkprint
       </span>
     </div>
   );

@@ -19,7 +19,7 @@ const Dashboard = () => {
       title: "Food Expiry Tracker",
       icon: <BarChart2 className="h-8 w-8 text-green-600 mb-3" />,
       description: "Reduce household food waste. Track perishables, get expiry reminders, and learn if expired items are compostable or must be trashed. Help divert organics from landfill.",
-      goal: "APES Concepts: Decomposition, landfill methane, composting benefits.",
+      goal: "Forkprint Concepts: Decomposition, landfill methane, composting benefits.",
       buttonText: "Track Expiries",
       path: "/feature/food-expiry",
       author: "Jason"

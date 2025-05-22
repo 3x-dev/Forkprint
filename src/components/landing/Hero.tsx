@@ -1,6 +1,26 @@
 import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
-import { Apple, ArrowRight } from "lucide-react";
+import { 
+  Apple, 
+  ArrowRight, 
+  Utensils, 
+  Leaf, 
+  Recycle, 
+  Apple as AppleIcon, 
+  Droplet, 
+  Coffee, 
+  ShoppingBag,
+  Carrot,
+  Cherry,
+  Banana,
+  Pizza,
+  EggOff,
+  Milk,
+  Sprout,
+  Trash2,
+  Zap,
+  Sun
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export function Hero() {
@@ -13,17 +33,92 @@ export function Hero() {
       <div className="px-6 py-24 sm:px-6 sm:py-32 lg:px-8">
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-white to-green-50"></div>
         
-        <div className="mx-auto max-w-2xl text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl">
-            Your Food. 
-            <span className="bg-gradient-to-r from-green-600 to-teal-500 bg-clip-text text-transparent"> Simplified.</span>
+        {/* Decorative elements - floating icons */}
+        <div className="absolute top-20 left-10 text-green-200 animate-float opacity-40">
+          <Utensils size={36} />
+        </div>
+        <div className="absolute bottom-20 left-1/4 text-teal-200 animate-float-slow opacity-50">
+          <Leaf size={48} />
+        </div>
+        <div className="absolute top-1/3 right-16 text-green-300 animate-float animate-pulse-opacity">
+          <Recycle size={40} />
+        </div>
+        <div className="absolute top-2/3 right-1/4 text-teal-300 animate-float-slow opacity-40">
+          <Leaf size={32} />
+        </div>
+        
+        {/* Additional decorative elements */}
+        <div className="absolute top-40 right-[30%] text-green-200 animate-float-slow opacity-30">
+          <AppleIcon size={24} />
+        </div>
+        <div className="absolute bottom-40 right-[15%] text-teal-300 animate-float opacity-40">
+          <Droplet size={28} />
+        </div>
+        <div className="absolute top-[45%] left-[15%] text-green-300 animate-float opacity-35">
+          <Coffee size={32} />
+        </div>
+        <div className="absolute top-[35%] left-[40%] text-green-200 animate-float-slow opacity-25">
+          <ShoppingBag size={36} />
+        </div>
+        <div className="absolute bottom-[30%] left-[10%] text-teal-300 animate-float opacity-40">
+          <Recycle size={28} />
+        </div>
+        <div className="absolute top-[20%] right-[10%] text-green-200 animate-float-slow opacity-30">
+          <Leaf size={20} />
+        </div>
+        
+        {/* Even more decorative elements */}
+        <div className="absolute top-[15%] left-[28%] text-green-300 animate-float opacity-20">
+          <Carrot size={28} />
+        </div>
+        <div className="absolute bottom-[15%] right-[28%] text-teal-400 animate-float-slow opacity-30">
+          <Cherry size={22} />
+        </div>
+        <div className="absolute top-[60%] right-[35%] text-amber-300 animate-float opacity-25">
+          <Banana size={30} />
+        </div>
+        <div className="absolute top-[25%] left-[50%] text-orange-300 animate-float-slow opacity-20">
+          <Pizza size={32} />
+        </div>
+        <div className="absolute top-[55%] left-[60%] text-gray-300 animate-float opacity-15">
+          <EggOff size={24} />
+        </div>
+        <div className="absolute bottom-[45%] right-[5%] text-blue-200 animate-float-slow opacity-30">
+          <Milk size={26} />
+        </div>
+        <div className="absolute top-[5%] right-[45%] text-green-400 animate-float opacity-20">
+          <Sprout size={18} />
+        </div>
+        <div className="absolute bottom-[10%] left-[45%] text-red-200 animate-float-slow opacity-25">
+          <Trash2 size={20} />
+        </div>
+        <div className="absolute top-[38%] left-[5%] text-yellow-300 animate-float opacity-15">
+          <Zap size={22} />
+        </div>
+        <div className="absolute top-[10%] left-[18%] text-yellow-200 animate-float-slow opacity-20">
+          <Sun size={24} />
+        </div>
+        
+        <div className="mx-auto max-w-2xl text-center relative z-10">
+          <h1 
+            className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl animate-slide-in-up"
+            style={{ animationDelay: "200ms" }}
+          >
+            Fork Over 
+            <span className="bg-gradient-to-r from-green-600 to-teal-500 bg-clip-text text-transparent"> Waste.</span>
           </h1>
           
-          <p className="mt-6 text-lg leading-8 text-gray-600">
-            Track expiration dates, reduce waste, and make the most of your groceries with our intuitive food management app.
+          <p 
+            className="mt-6 text-lg leading-8 text-gray-600 animate-fade-in"
+            style={{ animationDelay: "400ms" }}
+          >
+            Track expiration dates, reduce waste, and make the most of your groceries with Forkprint.
           </p>
           
-          <div className="mt-10 flex items-center justify-center gap-x-6">
+          <div 
+            className="mt-10 flex items-center justify-center gap-x-6 animate-fade-in"
+            style={{ animationDelay: "600ms" }}
+          >
             {!user ? (
               <Button 
                 onClick={() => signInWithGoogle()} 

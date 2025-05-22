@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { ArrowLeft, Upload, Info, BookOpen, Recycle, Trash } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -79,7 +78,7 @@ const WasteSorter = () => {
     setImageUrl(url);
     setResults(null);
     analyzeImage(url)
-      .then((data: any) => {
+      .then((data: { items: DetectedItem[]; summary: string }) => {
         setResults(data);
         setIsAnalyzing(false);
         toast.success("Analysis complete!");
@@ -120,7 +119,7 @@ const WasteSorter = () => {
               <h2 className="text-lg font-semibold mb-4">How the Waste Sorter Works</h2>
               <ol className="space-y-4">
                 <li className="flex gap-3">
-                  <div className="flex-shrink-0 bg-smartsort-green rounded-full p-2 text-white mt-1">
+                  <div className="flex-shrink-0 bg-forkprint-green rounded-full p-2 text-white mt-1">
                     <Upload className="h-4 w-4" />
                   </div>
                   <div>
@@ -129,7 +128,7 @@ const WasteSorter = () => {
                   </div>
                 </li>
                 <li className="flex gap-3">
-                  <div className="flex-shrink-0 bg-smartsort-green rounded-full p-2 text-white mt-1">
+                  <div className="flex-shrink-0 bg-forkprint-green rounded-full p-2 text-white mt-1">
                     <BookOpen className="h-4 w-4" />
                   </div>
                   <div>
@@ -138,7 +137,7 @@ const WasteSorter = () => {
                   </div>
                 </li>
                 <li className="flex gap-3">
-                  <div className="flex-shrink-0 bg-smartsort-green rounded-full p-2 text-white mt-1">
+                  <div className="flex-shrink-0 bg-forkprint-green rounded-full p-2 text-white mt-1">
                     <Recycle className="h-4 w-4" />
                   </div>
                   <div>
@@ -165,8 +164,8 @@ const WasteSorter = () => {
               {isAnalyzing ? (
                 <div className="text-center py-8">
                   <div className="animate-pulse flex flex-col items-center">
-                    <div className="rounded-full bg-smartsort-light-green p-4 mb-4">
-                      <Recycle className="h-8 w-8 text-smartsort-green" />
+                    <div className="rounded-full bg-forkprint-light-green p-4 mb-4">
+                      <Recycle className="h-8 w-8 text-forkprint-green" />
                     </div>
                     <h3 className="text-lg font-medium">Analyzing your waste items...</h3>
                     <p className="text-sm text-muted-foreground mt-2">This may take a few moments.</p>

@@ -1,5 +1,5 @@
-
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
 	darkMode: ["class"],
@@ -63,8 +63,8 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				},
-				// SmartSort App specific colors
-				'smartsort': {
+				// Forkprint App specific colors
+				'forkprint': {
 					'light-green': '#E8F5E9',
 					'green': '#4CAF50',
 					'dark-green': '#2E7D32',
@@ -106,6 +106,22 @@ export default {
 					'0%': { transform: 'scale(0.95)', opacity: '0' },
 					'100%': { transform: 'scale(1)', opacity: '1' }
 				},
+				'slide-in-up-kf': {
+					'0%': { opacity: '0', transform: 'translateY(1rem)' },
+					'100%': { opacity: '1', transform: 'translateY(0)' },
+				},
+				'float': {
+					'0%, 100%': { transform: 'translateY(0)' },
+					'50%': { transform: 'translateY(-10px)' },
+				},
+				'float-slow': {
+					'0%, 100%': { transform: 'translateY(0)' },
+					'50%': { transform: 'translateY(-20px)' },
+				},
+				'pulse-opacity': {
+					'0%, 100%': { opacity: '0.6' },
+					'50%': { opacity: '0.8' },
+				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
@@ -113,8 +129,12 @@ export default {
 				'fade-in': 'fade-in 0.3s ease-out',
 				'fade-out': 'fade-out 0.3s ease-out',
 				'scale-in': 'scale-in 0.2s ease-out',
+				'slide-in-up': 'slide-in-up-kf 0.5s ease-out forwards',
+				'float': 'float 4s ease-in-out infinite',
+				'float-slow': 'float-slow 6s ease-in-out infinite',
+				'pulse-opacity': 'pulse-opacity 4s ease-in-out infinite',
 			}
 		}
 	},
-	plugins: [require("tailwindcss-animate")],
+	plugins: [tailwindcssAnimate],
 } satisfies Config;
