@@ -72,7 +72,7 @@ const Dashboard = () => {
       description: "Log what you served and what was left uneaten. Automatically calculates the percentage wasted and total food waste over time for your meals.",
       goal: "Made by Parth",
       buttonText: "Log Food Waste",
-      path: "/feature/waste-tracker",
+      path: "/feature/food-waste-logger",
       author: "Parth"
     }
   ];
