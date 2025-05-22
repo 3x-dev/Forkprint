@@ -91,14 +91,16 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <section className="mb-12 p-6 bg-white shadow-xl rounded-xl border border-gray-200">
-          <h2 className="text-2xl font-semibold text-gray-700 mb-4">Your Food Waste Insights</h2>
-          <div className="text-center text-gray-500 py-10 border-2 border-dashed border-gray-300 rounded-lg">
-            <BarChart2 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-lg">Detailed charts and graphs on your food usage and waste will appear here soon!</p>
-            <p className="text-sm">Track your progress and identify areas for improvement.</p>
-          </div>
-        </section>
+        <div>
+          {/* <section className="mb-12 p-6 bg-white shadow-xl rounded-xl border border-gray-200">
+            <h2 className="text-2xl font-semibold text-gray-700 mb-4">Your Food Waste Insights</h2>
+            <div className="text-center text-gray-500 py-10 border-2 border-dashed border-gray-300 rounded-lg">
+              <BarChart2 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-lg">Detailed charts and graphs on your food usage and waste will appear here soon!</p>
+              <p className="text-sm">Track your progress and identify areas for improvement.</p>
+            </div>
+          </section> */}
+        </div>
 
         <section className="mb-12 p-6 bg-white shadow-xl rounded-xl border border-gray-200">
           <h2 className="text-2xl font-semibold text-gray-700 mb-6 text-center">What's In Your Fridge?</h2>
