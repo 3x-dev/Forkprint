@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom'; // Added import
 import { useAuthContext } from '@/components/auth/AuthProvider'; // For user context
 import { supabase } from '@/integrations/supabase/client';    // Supabase client
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { PlusCircle, Trash2, Edit3, ImageOff, ChevronDown, ChevronUp, ChefHat } from 'lucide-react'; // Icons
+import { PlusCircle, Trash2, Edit3, ImageOff, ChevronDown, ChevronUp, ChefHat, ArrowLeft } from 'lucide-react'; // Icons
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area"; // For scrollable recipe content
 import { Lightbulb } from 'lucide-react'; // Icon for suggest recipes button
@@ -601,8 +602,14 @@ const FoodExpiryPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4 md:p-8">
-      <div className="mb-6">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Food Expiry Tracker</h1>
+        <Link to="/dashboard">
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </Link>
       </div>
       
       <div className="grid md:grid-cols-3 gap-8">
