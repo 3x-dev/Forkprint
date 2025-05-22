@@ -25,6 +25,9 @@ const packagingTypes = [
   { id: 'PLASTIC_FILM', label: 'Plastic - Film (e.g., wrappers, bags)', isLowWaste: false },
   { id: 'PLASTIC_RIGID_OTHER', label: 'Plastic - Rigid, Other (Types #3, #4, #5, #6, #7)', isLowWaste: false },
   { id: 'PLASTIC_COATED_PAPER', label: 'Plastic-Coated Paper (e.g., some coffee cups, Tetra Paks)', isLowWaste: false },
+  { id: 'FOAM', label: 'Foam (e.g., Styrofoam, EPS trays)', isLowWaste: false },
+  { id: 'WAXED_PAPER_CARDBOARD', label: 'Waxed Paper/Cardboard (e.g., some food wraps, butcher paper)', isLowWaste: false },
+  { id: 'FLEXIBLE_LAMINATE_POUCH', label: 'Flexible Laminate Pouch (e.g., tuna, baby food, juice pouches)', isLowWaste: false },
   { id: 'MIXED_MATERIALS', label: 'Mixed Materials (e.g., crisp bags with foil lining)', isLowWaste: false },
   { id: 'OTHER_UNKNOWN', label: 'Other/Unknown', isLowWaste: false },
 ];
@@ -458,7 +461,7 @@ const PackagingSwapPage = () => {
       </Link>
       <h1 className="text-3xl font-bold mb-2">Plastic-Free Packaging Swapper</h1>
       <p className="text-gray-600 mb-6">
-        For 5–7 days, try to buy foods with low-waste or no plastic packaging. Log your purchases below.
+        Try to buy foods with low-waste or no plastic packaging. Log your purchases below.
       </p>
 
       <Card className="mb-8">
@@ -520,7 +523,7 @@ const PackagingSwapPage = () => {
                 id="notes" 
                 value={notes} 
                 onChange={(e) => setNotes(e.target.value)} 
-                placeholder="e.g., Brand, bought at Farmer\'s Market, bulk bin at Store X"
+                placeholder="e.g., Brand, bought at Farmer's Market, bulk bin at Store X"
               />
             </div>
             {/* TODO: Add photo upload fields */}
@@ -703,7 +706,7 @@ const PackagingSwapPage = () => {
                 id="editNotes"
                 value={editNotes}
                 onChange={(e) => setEditNotes(e.target.value)}
-                placeholder="e.g., Brand, bought at Farmer\'s Market, bulk bin at Store X"
+                placeholder="e.g., Brand, bought at Farmer's Market, bulk bin at Store X"
               />
             </div>
             <DialogFooter>

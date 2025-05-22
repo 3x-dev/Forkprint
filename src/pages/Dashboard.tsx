@@ -2,6 +2,7 @@ import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { BarChart2, ShoppingBag, Trash2, ChevronRight } from "lucide-react";
+import React from "react";
 
 const Dashboard = () => {
   const { user, signOut } = useAuthContext();
@@ -17,27 +18,27 @@ const Dashboard = () => {
   const features = [
     {
       title: "Food Expiry Tracker",
-      icon: <BarChart2 className="h-8 w-8 text-green-600 mb-3" />,
-      description: "Reduce household food waste. Track perishables, get expiry reminders, and learn if expired items are compostable or must be trashed. Help divert organics from landfill.",
-      goal: "Forkprint Concepts: Decomposition, landfill methane, composting benefits.",
+      icon: <BarChart2 className="h-8 w-8 text-green-600" />,
+      description: "Reduce household food waste. Track perishables, get expiry reminders, and learn if expired items are compostable or must be trashed.",
+      goal: "Made by Jason",
       buttonText: "Track Expiries",
       path: "/feature/food-expiry",
       author: "Jason"
     },
     {
       title: "Plastic-Free Packaging Swapper",
-      icon: <ShoppingBag className="h-8 w-8 text-blue-600 mb-3" />,
-      description: "For 5-7 days, buy foods with low-waste or no plastic packaging. Log packaging types, see your score for choosing low-waste options, and track your swaps.",
-      goal: "Take photos of old vs. new choices, show receipts or fridge photos of lower-waste options.",
+      icon: <ShoppingBag className="h-8 w-8 text-blue-600" />,
+      description: "Buy foods with low-waste or no plastic packaging. Log packaging types, see your score for choosing low-waste options, and track your choice swaps.",
+      goal: "Made by Aryan",
       buttonText: "Log Packaging",
       path: "/feature/packaging-swap",
       author: "Aryan"
     },
     {
       title: "Food Waste Logger",
-      icon: <Trash2 className="h-8 w-8 text-red-600 mb-3" />,
-      description: "Log what you served and what was left uneaten. Automatically calculates percentage wasted and total food waste over time. Get encouragement and aim for a 'Clean Plate' streak!",
-      goal: "Graph your food waste trend over 5-7 days.",
+      icon: <Trash2 className="h-8 w-8 text-red-600" />,
+      description: "Log what you served and what was left uneaten. Automatically calculates the percentage wasted and total food waste over time for your meals.",
+      goal: "Made by Parth",
       buttonText: "Log Food Waste",
       path: "/feature/waste-tracker",
       author: "Parth"
@@ -78,12 +79,13 @@ const Dashboard = () => {
             {features.map((feature) => (
               <div key={feature.title} className="bg-white shadow-2xl rounded-xl border border-gray-200 flex flex-col overflow-hidden hover:shadow-green-200/50 transition-shadow duration-300">
                 <div className="p-6 flex-grow">
-                  <div className="flex items-center justify-center mb-4 w-16 h-16 rounded-full bg-gray-100 mx-auto">
-                     {feature.icon}
+                  <div className="flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mx-auto">
+                     {React.cloneElement(feature.icon, { className: feature.icon.props.className + ' block' })}
                   </div>
+                  <div className="mb-4" />
                   <h3 className="text-xl font-semibold text-gray-800 mb-3 text-center">{feature.title}</h3>
                   <p className="text-gray-600 text-sm mb-3 leading-relaxed">{feature.description}</p>
-                  <p className="text-xs text-gray-500 italic mb-4">"{feature.goal}" - {feature.author}</p>
+                  <p className="text-xs text-gray-500 italic mb-4">Made by {feature.author}</p>
                 </div>
                 <div className="p-6 bg-gray-50 border-t border-gray-200">
                   <Button 
