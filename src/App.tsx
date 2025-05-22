@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import Navbar from "./components/Navbar";
 import PackagingSwapPage from "./pages/PackagingSwapPage";
+import FoodExpiryPage from "./pages/Feature1";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,11 @@ const App = () => (
             <Route path="/feature/packaging-swap" element={
               <ProtectedRoute>
                 <PackagingSwapPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/feature/food-expiry" element={
+              <ProtectedRoute>
+                <FoodExpiryPage />
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />

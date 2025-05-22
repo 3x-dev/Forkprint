@@ -2,7 +2,7 @@ import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { BarChart2, ShoppingBag, Trash2, ChevronRight } from "lucide-react";
-import React from "react";
+import * as React from "react";
 
 const Dashboard = () => {
   const { user, signOut } = useAuthContext();
