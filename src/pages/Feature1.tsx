@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { PlusCircle, Trash2, Edit3 } from 'lucide-react'; // Icons
+import { PlusCircle, Trash2, Edit3, ImageOff } from 'lucide-react'; // Icons
 
 // Mirror the structure from your Supabase table (after types are generated)
 // This interface will be more robust once types.ts is updated.
@@ -17,9 +17,14 @@ interface FoodItem {
   name: string;
   expiry_date: string; // Store as ISO string "YYYY-MM-DD"
   amount?: string | null; // Match Supabase (TEXT can be null)
+  image_url?: string | null; // New field for the image URL
   created_at?: string;
   updated_at?: string;
 }
+
+// Spoonacular API Key from environment variables
+const SPOONACULAR_API_KEY = import.meta.env.VITE_SPOONACULAR_API_KEY;
+const SPOONACULAR_IMAGE_BASE_URL = "https://spoonacular.com/cdn/ingredients_100x100/"; // Or _250x250 / _500x500
 
 const FoodExpiryPage: React.FC = () => {
   const { user } = useAuthContext();
@@ -53,6 +58,12 @@ const FoodExpiryPage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!SPOONACULAR_API_KEY) {
+        console.warn("Spoonacular API key is not set. Image fetching will be disabled.");
+        toast.warning("Image fetching disabled: Spoonacular API key missing.", {
+            description: "Please set VITE_SPOONACULAR_API_KEY in your .env file."
+        });
+    }
     fetchFridgeItems();
   }, [user]); // Re-fetch if user changes
 
@@ -92,6 +103,32 @@ const FoodExpiryPage: React.FC = () => {
     });
   }, [fridgeItems]);
 
+  const fetchFoodImageFromName = async (name: string): Promise<string | null> => {
+    if (!SPOONACULAR_API_KEY) return null;
+    // Basic normalization: trim and take first few words if very long.
+    // More sophisticated normalization could be added (e.g. lowercase, remove plurals, common adjectives)
+    const searchTerm = name.trim().toLowerCase();
+    const query = encodeURIComponent(searchTerm.split(' ').slice(0, 3).join(' ')); // Use first 3 words for search
+    
+    try {
+      const response = await fetch(
+        `https://api.spoonacular.com/food/ingredients/search?query=${query}&number=1&apiKey=${SPOONACULAR_API_KEY}`
+      );
+      if (!response.ok) {
+        console.error("Spoonacular API error:", response.status, await response.text());
+        return null;
+      }
+      const data = await response.json();
+      if (data.results && data.results.length > 0 && data.results[0].image) {
+        return SPOONACULAR_IMAGE_BASE_URL + data.results[0].image;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error fetching image from Spoonacular:", error);
+      return null;
+    }
+  };
+
   const handleAddItem = async () => {
     if (!user) {
       toast.error("You must be logged in to add items.");
@@ -102,30 +139,62 @@ const FoodExpiryPage: React.FC = () => {
       return;
     }
     setIsLoading(true);
+    let newItemId: string | null = null;
+    let addedItemData: FoodItem | null = null;
+
     try {
       const newItemPayload = {
         user_id: user.id,
         name: itemName,
-        expiry_date: expiryDate, // Directly use "YYYY-MM-DD"
+        expiry_date: expiryDate,
         amount: amount || null,
+        image_url: null, // Initially null, will be updated after image fetch
       };
       // After type generation, (supabase.from('food_items') as any) can be just supabase.from('food_items')
-      const { data, error } = await supabase
+      const { data: insertedData, error: insertError } = await supabase
         .from('food_items')
         .insert(newItemPayload)
         .select()
-        .single(); // Assuming you want the single inserted item back
+        .single();
 
-      if (error) throw error;
+      if (insertError) throw insertError;
+      if (!insertedData) throw new Error("Failed to retrieve inserted item data.");
       
-      if (data) {
-        // Type assertion might be needed if 'data' is not perfectly typed yet
-        setFridgeItems(prevItems => [...prevItems, data as FoodItem].sort((a,b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime()));
-        toast.success(`"${itemName}" added to your fridge!`);
-        setItemName('');
-        setExpiryDate('');
-        setAmount('');
+      addedItemData = insertedData as FoodItem;
+      newItemId = addedItemData.id;
+
+      toast.success(`"${itemName}" added. Fetching image...`);
+      setItemName('');
+      setExpiryDate('');
+      setAmount('');
+
+      // Fetch image and update
+      const imageUrl = await fetchFoodImageFromName(addedItemData.name);
+      if (imageUrl && newItemId) {
+        const { data: updatedData, error: updateError } = await supabase
+          .from('food_items')
+          .update({ image_url: imageUrl })
+          .eq('id', newItemId)
+          .select()
+          .single();
+        
+        if (updateError) {
+            toast.error("Failed to save image URL.", {description: updateError.message});
+        } else if (updatedData) {
+            addedItemData = updatedData as FoodItem; // Use the fully updated item
+            toast.info(`Image found for "${addedItemData.name}"!`);
+        }
+      } else {
+          toast.info(`No image found for "${addedItemData.name}", or API key missing.`);
       }
+      
+      // Update local state with the potentially image-updated item
+      if(addedItemData) {
+          setFridgeItems(prevItems => 
+            [...prevItems, addedItemData as FoodItem].sort((a,b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime())
+          );
+      }
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       toast.error("Failed to add item.", { description: errorMessage });
@@ -189,7 +258,7 @@ const FoodExpiryPage: React.FC = () => {
                 <div className="space-y-4">
                     <div>
                         <Label htmlFor="itemName" className="text-sm font-medium text-gray-600">Item Name</Label>
-                        <Input id="itemName" type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="e.g., Milk" className="mt-1"/>
+                        <Input id="itemName" type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="e.g., Milk, Eggs, Apple" className="mt-1"/>
                     </div>
                     <div>
                         <Label htmlFor="expiryDate" className="text-sm font-medium text-gray-600">Expiry Date</Label>
@@ -199,9 +268,10 @@ const FoodExpiryPage: React.FC = () => {
                         <Label htmlFor="amount" className="text-sm font-medium text-gray-600">Amount (Optional)</Label>
                         <Input id="amount" type="text" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g., 1 Gallon, 200g" className="mt-1"/>
                     </div>
-                    <Button onClick={handleAddItem} disabled={isLoading} className="w-full bg-green-600 hover:bg-green-700 text-white">
-                        <PlusCircle className="h-5 w-5 mr-2" /> {isLoading ? 'Adding...' : 'Add to Fridge'}
+                    <Button onClick={handleAddItem} disabled={isLoading || !SPOONACULAR_API_KEY} className="w-full bg-green-600 hover:bg-green-700 text-white">
+                        <PlusCircle className="h-5 w-5 mr-2" /> {isLoading ? 'Saving...' : 'Add to Fridge'}
                     </Button>
+                    {!SPOONACULAR_API_KEY && <p className="text-xs text-red-500 mt-2">Image fetching disabled: API key missing.</p>}
                 </div>
             </div>
 
@@ -215,9 +285,14 @@ const FoodExpiryPage: React.FC = () => {
                 {itemsOnSelectedDate.length > 0 && (
                     <ul className="space-y-2">
                         {itemsOnSelectedDate.map(item => (
-                            <li key={item.id} className="text-sm p-2 border-b border-gray-100">
+                            <li key={item.id} className="text-sm p-2 border-b border-gray-100 flex items-center">
+                                {item.image_url ? (
+                                    <img src={item.image_url} alt={item.name} className="h-8 w-8 mr-2 rounded object-cover" />
+                                ) : (
+                                    <ImageOff className="h-8 w-8 mr-2 text-gray-300" />
+                                )}
                                 <span className="font-medium text-gray-800">{item.name}</span>
-                                {item.amount && <span className="text-gray-600 text-xs"> ({item.amount})</span>}
+                                {item.amount && <span className="text-gray-600 text-xs ml-1"> ({item.amount})</span>}
                             </li>
                         ))}
                     </ul>
@@ -232,22 +307,28 @@ const FoodExpiryPage: React.FC = () => {
                 {isLoading && fridgeItems.length === 0 && <p className="text-gray-500">Loading your fridge...</p>}
                 {!isLoading && fridgeItems.length === 0 && <p className="text-gray-500">Your fridge is empty. Add some items!</p>}
                 {fridgeItems.length > 0 && (
-                    <ul className="space-y-3 max-h-96 overflow-y-auto"> {/* Added scroll for long lists */}
+                    <ul className="space-y-3 max-h-[calc(100vh-20rem)] overflow-y-auto"> {/* Adjusted max height */}
                     {fridgeItems.map(item => (
                         <li key={item.id} className="p-3 border border-gray-200 rounded-md shadow-sm flex justify-between items-center hover:bg-gray-50">
-                        <div>
-                            <h3 className="font-semibold text-gray-800">{item.name}</h3>
-                            <p className="text-sm text-gray-600">Expires: {new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}</p>
-                            {item.amount && <p className="text-sm text-gray-500">Amount: {item.amount}</p>}
-                        </div>
-                        <div className="flex space-x-2">
-                            {/* <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => alert(`Edit ${item.name}`)} title="Edit Item">
-                                <Edit3 className="h-4 w-4" />
-                            </Button> */}
-                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDeleteItem(item.id, item.name)} disabled={isLoading} title="Delete Item">
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </div>
+                            <div className="flex items-center">
+                                {item.image_url ? (
+                                    <img src={item.image_url} alt={item.name} className="h-12 w-12 mr-3 rounded-md object-cover shadow-sm"/>
+                                ) : (
+                                    <div className="h-12 w-12 mr-3 rounded-md bg-gray-100 flex items-center justify-center">
+                                        <ImageOff className="h-6 w-6 text-gray-400" />
+                                    </div>
+                                )}
+                                <div>
+                                    <h3 className="font-semibold text-gray-800">{item.name}</h3>
+                                    <p className="text-sm text-gray-600">Expires: {new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}</p>
+                                    {item.amount && <p className="text-sm text-gray-500">Amount: {item.amount}</p>}
+                                </div>
+                            </div>
+                            <div className="flex space-x-2">
+                                <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDeleteItem(item.id, item.name)} disabled={isLoading} title="Delete Item">
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            </div>
                         </li>
                     ))}
                     </ul>
