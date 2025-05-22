@@ -10,8 +10,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { PlusCircle, Trash2, BarChart, Utensils, ArrowLeft } from 'lucide-react';
+import { PlusCircle, Trash2, BarChart, Utensils, ArrowLeft, CalendarIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
 
 // Interface for a food serving
 interface FoodServing {
@@ -64,6 +67,7 @@ interface FoodWasteLogEntry {
 interface WasteSummary {
   date: string;
   percentage_consumed: number;
+  percentage_wasted: number;
 }
 
 const wasteReasons = [
@@ -79,6 +83,9 @@ const disposalMethods = [
   "General Waste",
   "Fed to pets",
   "Saved for later",
+  "Recycled",
+  "Gave away",
+  "Down the drain",
   "Other"
 ];
 
@@ -103,7 +110,8 @@ const FoodWasteLoggerPage: React.FC = () => {
     quantity: string;
     unit: string;
     description: string;
-  }[]>([{ name: '', quantity: '1', unit: 'serving', description: '' }]);
+  }[]>([{ name: '', quantity: '', unit: '', description: '' }]);
+  const [selectedMealDate, setSelectedMealDate] = useState<Date | undefined>(new Date());
   
   // Waste logging states
   const [selectedServingId, setSelectedServingId] = useState<string | null>(null);
@@ -112,13 +120,14 @@ const FoodWasteLoggerPage: React.FC = () => {
     wastedFraction: string;
     description: string;
     reason: string;
+    otherReason: string;
     disposalMethod: string;
+    otherDisposalMethod: string;
   }[]>([]);
   
   // Data states
   const [foodServings, setFoodServings] = useState<FoodWasteLogEntry[]>([]);
   const [wasteSummaryData, setWasteSummaryData] = useState<WasteSummary[]>([]);
-  const [showStats, setShowStats] = useState(false);
   
   // Fetch food servings from Supabase
   const fetchFoodServings = async () => {
@@ -178,13 +187,13 @@ const FoodWasteLoggerPage: React.FC = () => {
   
   // Generate summary data for the chart
   const generateWasteSummaryData = (entries: FoodWasteLogEntry[]) => {
-    const dailyData: Record<string, { totalConsumed: number, totalItems: number }> = {};
+    const dailyData: Record<string, { totalConsumed: number, totalItems: number, totalWastedItems: number }> = {};
     
     entries.forEach(entry => {
       const date = new Date(entry.serving.served_at).toISOString().split('T')[0];
       
       if (!dailyData[date]) {
-        dailyData[date] = { totalConsumed: 0, totalItems: 0 };
+        dailyData[date] = { totalConsumed: 0, totalItems: 0, totalWastedItems: 0 };
       }
       
       entry.portions.forEach(portion => {
@@ -193,6 +202,9 @@ const FoodWasteLoggerPage: React.FC = () => {
         if (portion.waste) {
           const consumedFraction = 1 - portion.waste.quantity_wasted_as_fraction_of_served;
           dailyData[date].totalConsumed += consumedFraction;
+          if (portion.waste.quantity_wasted_as_fraction_of_served > 0) {
+            dailyData[date].totalWastedItems++;
+          }
         } else {
           // If no waste entry, assume fully consumed
           dailyData[date].totalConsumed++;
@@ -201,15 +213,86 @@ const FoodWasteLoggerPage: React.FC = () => {
     });
     
     // Convert to array for chart
-    const summaryData: WasteSummary[] = Object.entries(dailyData).map(([date, data]) => ({
-      date,
-      percentage_consumed: (data.totalConsumed / data.totalItems) * 100
-    }));
+    const summaryData: WasteSummary[] = Object.entries(dailyData).map(([date, data]) => {
+      const percentage_consumed = data.totalItems > 0 ? (data.totalConsumed / data.totalItems) * 100 : 0;
+      const percentage_wasted = data.totalItems > 0 ? 100 - percentage_consumed : 0;
+      return {
+        date,
+        percentage_consumed,
+        percentage_wasted
+      };
+    });
     
     // Sort by date
     summaryData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
     setWasteSummaryData(summaryData);
+  };
+  
+  // Helper function to get today's date in YYYY-MM-DD format
+  const getTodayDateString = () => new Date().toISOString().split('T')[0];
+
+  // Helper function to get today's waste summary
+  const getTodaysWasteSummary = (summaryData: WasteSummary[]): WasteSummary | null => {
+    const todayStr = getTodayDateString();
+    return summaryData.find(s => s.date === todayStr) || null;
+  };
+
+  // Helper function to calculate average waste for the last N days (excluding today)
+  const getAverageWasteLastNDays = (summaryData: WasteSummary[], numDays: number): number | null => {
+    const todayStr = getTodayDateString();
+    const pastData = summaryData.filter(s => s.date < todayStr);
+    const recentData = pastData.slice(-numDays);
+    if (recentData.length === 0) return null;
+    const totalWaste = recentData.reduce((sum, s) => sum + s.percentage_wasted, 0);
+    return totalWaste / recentData.length;
+  };
+
+  // Generate encouragement message based on waste percentage and trends
+  const generateInsightsAndTips = (currentSummaryData: WasteSummary[]) => {
+    const insights: { message: string; type: 'tip' | 'encouragement' | 'warning' }[] = [];
+    const todaySummary = getTodaysWasteSummary(currentSummaryData);
+    const avgWasteLast7Days = getAverageWasteLastNDays(currentSummaryData, 7);
+
+    if (todaySummary) {
+      const todaysWaste = todaySummary.percentage_wasted;
+      if (todaysWaste === 0) {
+        insights.push({ message: "Amazing! Zero waste today! You're a sustainability superstar!", type: 'encouragement' });
+      } else if (todaysWaste <= 10) {
+        insights.push({ message: "Great job on keeping waste low today! Every little bit helps.", type: 'encouragement' });
+      } else if (todaysWaste <= 25) {
+        insights.push({ message: "Good effort! You're mindful of your consumption.", type: 'encouragement' });
+        insights.push({ message: "Tip: Try planning meals for the next few days to use up ingredients.", type: 'tip' });
+      } else if (todaysWaste <= 50) {
+        insights.push({ message: "A bit of waste today, but awareness is the first step!", type: 'warning' });
+        insights.push({ message: "Tip: Check 'use-by' dates regularly and prioritize older items.", type: 'tip' });
+      } else {
+        insights.push({ message: "Let's focus on reducing waste tomorrow.", type: 'warning' });
+        insights.push({ message: "Tip: Serve smaller portions initially; you can always have seconds!", type: 'tip' });
+      }
+
+      if (avgWasteLast7Days !== null) {
+        if (todaysWaste < avgWasteLast7Days) {
+          insights.push({ message: `Fantastic! Your waste today (${todaysWaste.toFixed(1)}%) is lower than your recent average (${avgWasteLast7Days.toFixed(1)}%). Keep up the great habits!`, type: 'encouragement' });
+        } else if (todaysWaste > avgWasteLast7Days && avgWasteLast7Days < todaysWaste * 0.8 /* significantly more */ ) {
+          insights.push({ message: `Heads up! Waste today (${todaysWaste.toFixed(1)}%) is higher than your recent average (${avgWasteLast7Days.toFixed(1)}%). Let's get back on track!`, type: 'warning' });
+          insights.push({ message: "Tip: Revisit your shopping list to avoid overbuying, especially impulse buys.", type: 'tip' });
+        }
+      }
+    } else {
+      insights.push({ message: "Log your meals and waste to see your trends and get helpful tips!", type: 'tip' });
+    }
+
+    if (currentSummaryData.length < 3 && currentSummaryData.length > 0) {
+        insights.push({ message: "Keep logging for a few more days to unlock more detailed trend insights!", type: 'tip' });
+    }
+    
+    if (avgWasteLast7Days !== null && avgWasteLast7Days > 30 && (!todaySummary || todaySummary.percentage_wasted > 30)) {
+        insights.push({ message: "Pattern detected: Your average waste seems a bit high. Small changes can make a big difference!", type: 'warning' });
+        insights.push({ message: "Sustainability Tip: Explore creative ways to use leftovers. Many websites offer recipes for leftover ingredients!", type: 'tip' });
+    }
+
+    return insights;
   };
   
   useEffect(() => {
@@ -220,7 +303,7 @@ const FoodWasteLoggerPage: React.FC = () => {
   
   // Add a portion field to the form
   const addPortion = () => {
-    setPortions([...portions, { name: '', quantity: '1', unit: 'serving', description: '' }]);
+    setPortions([...portions, { name: '', quantity: '', unit: '', description: '' }]);
   };
   
   // Remove a portion from the form
@@ -241,63 +324,120 @@ const FoodWasteLoggerPage: React.FC = () => {
       toast.error("You must be logged in to add items.");
       return;
     }
-    
+
     if (!mealName) {
       toast.error("Please enter a meal name.");
       return;
     }
     
-    if (portions.some(p => !p.name || !p.quantity)) {
-      toast.error("Please complete all portion fields.");
+    if (!selectedMealDate) {
+      toast.error("Please select a date for the meal.");
       return;
     }
-    
+
+    // Validate quantity to ensure it's not 0
+    if (portions.some(p => !p.name || !p.quantity || parseFloat(p.quantity) === 0)) {
+      toast.error("Please complete all portion fields and ensure quantity is not zero.");
+      return;
+    }
+
     setIsLoading(true);
-    
+
     try {
-      // 1. Create the serving
-      const { data: servingData, error: servingError } = await supabase
-        .from('food_servings')
-        .insert({
-          user_id: user.id,
-          meal_name: mealName,
-          notes: mealNotes || null,
-          served_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-        
-      if (servingError) throw servingError;
+      // Use selectedMealDate for the date part, and current time for the time part.
+      const mealDate = new Date(selectedMealDate);
+      const now = new Date();
+      mealDate.setHours(now.getHours());
+      mealDate.setMinutes(now.getMinutes());
+      mealDate.setSeconds(now.getSeconds());
+      mealDate.setMilliseconds(now.getMilliseconds());
       
-      // 2. Create each portion
+      const mealDateStringForQuery = mealDate.toISOString().split('T')[0]; // YYYY-MM-DD format for querying
+
+      // Check for an existing serving for this meal type on the selected day
+      const { data: existingServings, error: fetchError } = await supabase
+        .from('food_servings')
+        .select('id, notes')
+        .eq('user_id', user.id)
+        .eq('meal_name', mealName)
+        .gte('served_at', `${mealDateStringForQuery}T00:00:00.000Z`)
+        .lte('served_at', `${mealDateStringForQuery}T23:59:59.999Z`)
+        .order('served_at', { ascending: false })
+        .limit(1);
+
+      if (fetchError) throw fetchError;
+
+      let servingIdToUse: string;
+      let existingNotes: string | null = null;
+
+      if (existingServings && existingServings.length > 0) {
+        // Use existing serving
+        servingIdToUse = existingServings[0].id;
+        existingNotes = existingServings[0].notes;
+        toast.info(`Adding items to existing "${mealName}" for ${mealDate.toLocaleDateString()}.`);
+
+        // Optionally update notes if new notes are provided
+        if (mealNotes && mealNotes !== existingNotes) {
+          const { error: updateNotesError } = await supabase
+            .from('food_servings')
+            .update({ notes: mealNotes })
+            .eq('id', servingIdToUse);
+          if (updateNotesError) console.error("Error updating notes:", updateNotesError); // Log error but continue
+        }
+
+      } else {
+        // 1. Create a new serving
+        const { data: newServingData, error: servingError } = await supabase
+          .from('food_servings')
+          .insert({
+            user_id: user.id,
+            meal_name: mealName,
+            notes: mealNotes || null,
+            served_at: mealDate.toISOString(), // Use the constructed mealDate
+          })
+          .select()
+          .single();
+
+        if (servingError) throw servingError;
+        servingIdToUse = newServingData.id;
+      }
+
+      // 2. Create each portion, associating with the servingIdToUse
       for (const portion of portions) {
+        // Ensure quantity is valid before parsing
+        const quantity = parseFloat(portion.quantity);
+        if (isNaN(quantity) || quantity <= 0) {
+          toast.error(`Invalid quantity for item: ${portion.name}. Must be greater than 0.`);
+          continue; // Skip this portion or handle error as needed
+        }
+
         const { error: portionError } = await supabase
           .from('served_portions')
           .insert({
-            serving_id: servingData.id,
+            serving_id: servingIdToUse,
             user_id: user.id,
             custom_food_item_name: portion.name,
-            quantity_served: parseFloat(portion.quantity),
+            quantity_served: quantity, // Use parsed quantity
             unit_served: portion.unit,
-            description: portion.description || null
+            description: portion.description || null,
           });
-          
+
         if (portionError) throw portionError;
       }
-      
-      toast.success(`Meal "${mealName}" added successfully!`);
-      
+
+      toast.success(`Meal items for "${mealName}" added successfully!`);
+
       // Reset form
       setMealName('');
       setMealNotes('');
-      setPortions([{ name: '', quantity: '1', unit: 'serving', description: '' }]);
-      
+      setPortions([{ name: '', quantity: '', unit: '', description: '' }]);
+      setSelectedMealDate(new Date()); // Reset selected date to today
+
       // Refresh data
       fetchFoodServings();
-      
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error("Failed to add meal.", { description: errorMessage });
+      toast.error("Failed to add meal items.", { description: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -313,10 +453,13 @@ const FoodWasteLoggerPage: React.FC = () => {
       // Initialize waste entries for each portion
       const initialWasteEntries = serving.portions.map(portion => ({
         portionId: portion.id,
-        wastedFraction: portion.waste ? portion.waste.quantity_wasted_as_fraction_of_served.toString() : '0',
+        // Convert fraction to percentage string for the input field
+        wastedFraction: portion.waste ? (portion.waste.quantity_wasted_as_fraction_of_served * 100).toString() : '0',
         description: portion.waste?.user_waste_description || '',
-        reason: portion.waste?.waste_reason || wasteReasons[0],
-        disposalMethod: portion.waste?.disposal_action_taken || disposalMethods[0]
+        reason: portion.waste?.waste_reason && !wasteReasons.includes(portion.waste.waste_reason) ? 'Other' : portion.waste?.waste_reason || wasteReasons[0],
+        otherReason: portion.waste?.waste_reason && !wasteReasons.includes(portion.waste.waste_reason) ? portion.waste.waste_reason : '',
+        disposalMethod: portion.waste?.disposal_action_taken && !disposalMethods.includes(portion.waste.disposal_action_taken) ? 'Other' : portion.waste?.disposal_action_taken || disposalMethods[0],
+        otherDisposalMethod: portion.waste?.disposal_action_taken && !disposalMethods.includes(portion.waste.disposal_action_taken) ? portion.waste.disposal_action_taken : ''
       }));
       
       setWasteEntries(initialWasteEntries);
@@ -327,6 +470,14 @@ const FoodWasteLoggerPage: React.FC = () => {
   const updateWasteEntry = (index: number, field: string, value: string) => {
     const updatedEntries = [...wasteEntries];
     updatedEntries[index] = { ...updatedEntries[index], [field]: value };
+
+    if (field === 'reason' && value !== 'Other') {
+      updatedEntries[index].otherReason = '';
+    }
+    if (field === 'disposalMethod' && value !== 'Other') {
+      updatedEntries[index].otherDisposalMethod = '';
+    }
+
     setWasteEntries(updatedEntries);
   };
   
@@ -338,8 +489,25 @@ const FoodWasteLoggerPage: React.FC = () => {
     
     try {
       for (const entry of wasteEntries) {
-        const fraction = Math.min(Math.max(parseFloat(entry.wastedFraction) || 0, 0), 1);
+        // Parse and validate the percentage, then convert to fraction for DB
+        const percentage = parseFloat(entry.wastedFraction);
+        if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+          toast.error(`Invalid waste percentage for portion. Must be between 0 and 100.`);
+          setIsLoading(false); // Release loading state
+          return; // Stop processing if validation fails for any entry
+        }
+        const fraction = percentage / 100;
         
+        let reasonToSave = entry.reason;
+        if (entry.reason === 'Other') {
+          reasonToSave = entry.otherReason ? entry.otherReason.trim() : 'Other';
+        }
+
+        let disposalToSave = entry.disposalMethod;
+        if (entry.disposalMethod === 'Other') {
+          disposalToSave = entry.otherDisposalMethod ? entry.otherDisposalMethod.trim() : 'Other';
+        }
+
         // Check if entry already exists
         const { data: existingEntry } = await supabase
           .from('food_waste_entries')
@@ -354,8 +522,8 @@ const FoodWasteLoggerPage: React.FC = () => {
             .update({
               quantity_wasted_as_fraction_of_served: fraction,
               user_waste_description: entry.description || null,
-              waste_reason: entry.reason,
-              disposal_action_taken: entry.disposalMethod
+              waste_reason: reasonToSave,
+              disposal_action_taken: disposalToSave
             })
             .eq('id', existingEntry.id);
             
@@ -369,8 +537,8 @@ const FoodWasteLoggerPage: React.FC = () => {
               user_id: user.id,
               quantity_wasted_as_fraction_of_served: fraction,
               user_waste_description: entry.description || null,
-              waste_reason: entry.reason,
-              disposal_action_taken: entry.disposalMethod
+              waste_reason: reasonToSave,
+              disposal_action_taken: disposalToSave
             });
             
           if (error) throw error;
@@ -404,19 +572,6 @@ const FoodWasteLoggerPage: React.FC = () => {
     );
     
     return (totalWasteFraction / portionsWithWaste.length) * 100;
-  };
-  
-  // Generate encouragement message based on waste percentage
-  const generateEncouragementMessage = (wastePercentage: number | null) => {
-    if (wastePercentage === null) return "Log your waste to see your progress!";
-    
-    const consumedPercentage = 100 - wastePercentage;
-    
-    if (consumedPercentage >= 95) return "Perfect! You finished all your food!";
-    if (consumedPercentage >= 90) return `Nice! You finished ${Math.round(consumedPercentage)}% of your food today.`;
-    if (consumedPercentage >= 75) return `Good job! You consumed ${Math.round(consumedPercentage)}% of your food.`;
-    if (consumedPercentage >= 50) return `You consumed ${Math.round(consumedPercentage)}% of your food. Can you do better next time?`;
-    return `You only consumed ${Math.round(consumedPercentage)}% of your food. Let's try to reduce waste next time!`;
   };
   
   // Handle deleting a meal
@@ -505,6 +660,30 @@ const FoodWasteLoggerPage: React.FC = () => {
           <CardContent>
             <div className="space-y-4">
               <div>
+                <Label htmlFor="meal-date">Meal Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      className={`w-full justify-start text-left font-normal ${!selectedMealDate && "text-muted-foreground"}`}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {selectedMealDate ? format(selectedMealDate, "PPP") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={selectedMealDate}
+                      onSelect={setSelectedMealDate}
+                      disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              
+              <div>
                 <Label htmlFor="meal-name">Meal Name</Label>
                 <Select 
                   value={mealName} 
@@ -548,26 +727,27 @@ const FoodWasteLoggerPage: React.FC = () => {
                 {portions.map((portion, index) => (
                   <div key={index} className="grid grid-cols-12 gap-2 items-end">
                     <div className="col-span-5">
-                      <Input 
-                        value={portion.name} 
+                      <Input
+                        value={portion.name}
                         onChange={(e) => updatePortion(index, 'name', e.target.value)}
-                        placeholder="Food name"
+                        placeholder="Food name (e.g., Apple)"
                       />
                     </div>
                     <div className="col-span-2">
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         min="0.1"
                         step="0.1"
-                        value={portion.quantity} 
+                        value={portion.quantity}
                         onChange={(e) => updatePortion(index, 'quantity', e.target.value)}
+                        placeholder="#"
                       />
                     </div>
                     <div className="col-span-3">
-                      <Input 
-                        value={portion.unit} 
+                      <Input
+                        value={portion.unit}
                         onChange={(e) => updatePortion(index, 'unit', e.target.value)}
-                        placeholder="Unit"
+                        placeholder="Unit (e.g., serving)"
                       />
                     </div>
                     <div className="col-span-2 flex justify-end">
@@ -604,67 +784,57 @@ const FoodWasteLoggerPage: React.FC = () => {
         
         {/* Stats and Charts */}
         <Card className="p-4">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BarChart className="h-5 w-5" />
-                Your Food Waste Stats
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setShowStats(!showStats)}
-              >
-                {showStats ? 'Hide Chart' : 'Show Chart'}
-              </Button>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <BarChart className="h-5 w-5" />
+              Waste Trends
             </CardTitle>
           </CardHeader>
           <CardContent>
             {wasteSummaryData.length > 0 ? (
               <>
-                {/* Encouragement message based on recent performance */}
-                <div className="p-4 bg-muted rounded-lg mb-6 text-center">
-                  <p className="text-lg font-medium">
-                    {generateEncouragementMessage(
-                      wasteSummaryData.length > 0 
-                        ? 100 - wasteSummaryData[wasteSummaryData.length - 1].percentage_consumed 
-                        : null
-                    )}
-                  </p>
+                <div className="text-sm text-muted-foreground mb-2 space-y-1">
+                  {generateInsightsAndTips(wasteSummaryData).map((insight, idx) => (
+                    <p key={idx} className={
+                      insight.type === 'encouragement' ? 'text-green-600' :
+                      insight.type === 'warning' ? 'text-orange-600' :
+                      'text-blue-600' // for tips
+                    }>
+                      {insight.message}
+                    </p>
+                  ))}
                 </div>
-                
-                {/* Waste chart */}
-                {showStats && (
-                  <div className="h-[300px] mt-4">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={wasteSummaryData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis 
-                          dataKey="date" 
-                          tickFormatter={(date) => new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        />
-                        <YAxis domain={[0, 100]} label={{ value: '% Consumed', angle: -90, position: 'insideLeft' }} />
-                        <Tooltip 
-                          formatter={(value) => {
-                            if (typeof value === 'number') {
-                              return [`${value.toFixed(1)}%`, 'Food Consumed'];
-                            }
-                            return [String(value), 'Food Consumed'];
-                          }}
-                          labelFormatter={(date) => new Date(date).toLocaleDateString()}
-                        />
-                        <Legend />
-                        <Line 
-                          type="monotone" 
-                          dataKey="percentage_consumed" 
-                          name="Food Consumed" 
-                          stroke="#4ade80" 
-                          activeDot={{ r: 8 }} 
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
+                <div className="h-[300px] mt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={wasteSummaryData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(date) =>
+                          new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                        }
+                      />
+                      <YAxis domain={[0, 100]} label={{ value: '% Consumed', angle: -90, position: 'insideLeft' }} />
+                      <Tooltip
+                        formatter={(value) => {
+                          if (typeof value === 'number') {
+                            return [`${value.toFixed(1)}%`, 'Food Consumed'];
+                          }
+                          return [String(value), 'Food Consumed'];
+                        }}
+                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                      />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="percentage_consumed"
+                        name="Food Consumed"
+                        stroke="#4ade80"
+                        activeDot={{ r: 8 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </>
             ) : (
               <div className="flex flex-col items-center justify-center h-[300px] text-center">
@@ -730,11 +900,23 @@ const FoodWasteLoggerPage: React.FC = () => {
                         {portion.description && ` - ${portion.description}`}
                       </div>
                       {portion.waste && (
-                        <div className="text-sm text-muted-foreground mt-1">
-                          <span className="font-medium">
-                            {(portion.waste.quantity_wasted_as_fraction_of_served * 100).toFixed(0)}% wasted
-                          </span>
-                          {portion.waste.user_waste_description && `: ${portion.waste.user_waste_description}`}
+                        <div className="text-sm text-muted-foreground mt-1 space-y-1">
+                          <div>
+                            <span className="font-medium">
+                              {(portion.waste.quantity_wasted_as_fraction_of_served * 100).toFixed(0)}% wasted
+                            </span>
+                            {portion.waste.user_waste_description && `: ${portion.waste.user_waste_description}`}
+                          </div>
+                          {portion.waste.waste_reason && (
+                            <div>
+                              <span className="font-semibold">Reason:</span> {portion.waste.waste_reason}
+                            </div>
+                          )}
+                          {portion.waste.disposal_action_taken && (
+                            <div>
+                              <span className="font-semibold">Disposal:</span> {portion.waste.disposal_action_taken}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -772,22 +954,16 @@ const FoodWasteLoggerPage: React.FC = () => {
                       
                       <div className="space-y-3">
                         <div>
-                          <Label>How much was wasted?</Label>
-                          <Select 
+                          <Label>How much was wasted? (%)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="1"
                             value={entry.wastedFraction}
-                            onValueChange={(value) => updateWasteEntry(index, 'wastedFraction', value)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select waste amount" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="0">None (0%)</SelectItem>
-                              <SelectItem value="0.25">Quarter (25%)</SelectItem>
-                              <SelectItem value="0.5">Half (50%)</SelectItem>
-                              <SelectItem value="0.75">Three quarters (75%)</SelectItem>
-                              <SelectItem value="1">All (100%)</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            onChange={(e) => updateWasteEntry(index, 'wastedFraction', e.target.value)}
+                            placeholder="e.g., 25"
+                          />
                         </div>
                         
                         <div>
@@ -814,6 +990,14 @@ const FoodWasteLoggerPage: React.FC = () => {
                               ))}
                             </SelectContent>
                           </Select>
+                          {entry.reason === 'Other' && (
+                            <Input 
+                              value={entry.otherReason}
+                              onChange={(e) => updateWasteEntry(index, 'otherReason', e.target.value)}
+                              placeholder="Please specify other reason"
+                              className="mt-2"
+                            />
+                          )}
                         </div>
                         
                         <div>
@@ -831,6 +1015,14 @@ const FoodWasteLoggerPage: React.FC = () => {
                               ))}
                             </SelectContent>
                           </Select>
+                          {entry.disposalMethod === 'Other' && (
+                            <Input 
+                              value={entry.otherDisposalMethod}
+                              onChange={(e) => updateWasteEntry(index, 'otherDisposalMethod', e.target.value)}
+                              placeholder="Please specify other disposal method"
+                              className="mt-2"
+                            />
+                          )}
                         </div>
                       </div>
                     </div>

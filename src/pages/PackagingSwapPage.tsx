@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Define Packaging Types
 // TODO: Refine these categories and their low-waste status based on further research or specific app goals.
@@ -47,6 +48,17 @@ interface PackagingLog {
   previous_packaging_type?: string;
 }
 
+// --- START ADDITION: Interface for Packaging Swap Summary ---
+interface PackagingSwapSummary {
+  date: string;
+  totalSwapsMade: number;      // Count of logs with made_switch = true for that day
+  lowWasteChoices: number;     // Count of logs with is_low_waste = true for that day
+  totalChoicesLogged: number;  // Total logs for that day
+  lowWastePercentage: number;  // (lowWasteChoices / totalChoicesLogged) * 100 for that day
+  // Potentially add counts for specific packaging types swapped from/to if needed for detailed charts
+}
+// --- END ADDITION ---
+
 const PackagingSwapPage = () => {
   const { user } = useAuthContext();
   const [foodItemName, setFoodItemName] = useState('');
@@ -69,6 +81,10 @@ const PackagingSwapPage = () => {
   const [editNotes, setEditNotes] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
+  // --- START ADDITION: State for chart data ---
+  const [packagingSummaryData, setPackagingSummaryData] = useState<PackagingSwapSummary[]>([]);
+  // --- END ADDITION ---
+
   // Calculate scoreboard stats
   const scoreboardStats = React.useMemo(() => {
     const totalItems = userLogs.length;
@@ -82,6 +98,16 @@ const PackagingSwapPage = () => {
   useEffect(() => {
     fetchUserLogs();
   }, [user]);
+
+  // --- START ADDITION: useEffect to generate summary data when userLogs change ---
+  useEffect(() => {
+    if (userLogs.length > 0) {
+      generatePackagingSwapSummaryData(userLogs);
+    } else {
+      setPackagingSummaryData([]); // Clear summary if no logs
+    }
+  }, [userLogs]);
+  // --- END ADDITION ---
 
   const fetchUserLogs = async () => {
     if (!user) return;
@@ -103,6 +129,42 @@ const PackagingSwapPage = () => {
     }
   };
   
+  // --- START ADDITION: Function to generate summary data for charts ---
+  const generatePackagingSwapSummaryData = (logs: PackagingLog[]) => {
+    const dailyData: Record<string, { 
+      swapsMade: number;
+      lowWasteItems: number;
+      totalItems: number;
+    }> = {};
+
+    logs.forEach(log => {
+      const date = new Date(log.created_at).toISOString().split('T')[0];
+      if (!dailyData[date]) {
+        dailyData[date] = { swapsMade: 0, lowWasteItems: 0, totalItems: 0 };
+      }
+
+      dailyData[date].totalItems++;
+      if (log.is_low_waste) {
+        dailyData[date].lowWasteItems++;
+      }
+      if (log.made_switch) {
+        dailyData[date].swapsMade++;
+      }
+    });
+
+    const summary: PackagingSwapSummary[] = Object.entries(dailyData).map(([date, data]) => ({
+      date,
+      totalSwapsMade: data.swapsMade,
+      lowWasteChoices: data.lowWasteItems,
+      totalChoicesLogged: data.totalItems,
+      lowWastePercentage: data.totalItems > 0 ? Math.round((data.lowWasteItems / data.totalItems) * 100) : 0,
+    }));
+
+    summary.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Sort by date
+    setPackagingSummaryData(summary);
+  };
+  // --- END ADDITION ---
+
   const handleSubmitLog = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -453,10 +515,130 @@ const PackagingSwapPage = () => {
     }
   };
 
+  // --- START ADDITION: Helper function to get today's date in YYYY-MM-DD format ---
+  const getTodayDateString = () => new Date().toISOString().split('T')[0];
+
+  // --- START ADDITION: Helper function to get today's summary ---
+  const getTodaysSummary = (summaryData: PackagingSwapSummary[]): PackagingSwapSummary | null => {
+    const todayStr = getTodayDateString();
+    return summaryData.find(s => s.date === todayStr) || null;
+  };
+
+  // --- START ADDITION: Helper function to calculate average low-waste percentage for the last N days ---
+  const getAverageLowWasteLastNDays = (summaryData: PackagingSwapSummary[], numDays: number): number | null => {
+    const todayStr = getTodayDateString();
+    const pastData = summaryData.filter(s => s.date < todayStr);
+    const recentData = pastData.slice(-numDays);
+    if (recentData.length === 0) return null;
+    const totalPercentage = recentData.reduce((sum, s) => sum + s.lowWastePercentage, 0);
+    return totalPercentage / recentData.length;
+  };
+
+  // --- START ADDITION: Generate insights and tips based on packaging data ---
+  const generatePackagingInsightsAndTips = (summaryData: PackagingSwapSummary[], logs: PackagingLog[]) => {
+    const insights: { message: string; type: 'tip' | 'encouragement' | 'warning' | 'achievement' }[] = [];
+    const todaySummary = getTodaysSummary(summaryData);
+    const avgLowWasteLast7Days = getAverageLowWasteLastNDays(summaryData, 7);
+    const totalSwapsMade = logs.filter(log => log.made_switch).length;
+    
+    // Basic insights based on total data
+    if (totalSwapsMade > 0) {
+      insights.push({ 
+        message: `You've made ${totalSwapsMade} sustainable packaging swap${totalSwapsMade === 1 ? '' : 's'} so far!`, 
+        type: 'achievement' 
+      });
+    }
+
+    // Today's insights
+    if (todaySummary) {
+      if (todaySummary.lowWastePercentage === 100 && todaySummary.totalChoicesLogged > 1) {
+        insights.push({ 
+          message: `Perfect day! All ${todaySummary.totalChoicesLogged} items you logged today used low-waste packaging.`, 
+          type: 'encouragement' 
+        });
+      } else if (todaySummary.lowWastePercentage > 75) {
+        insights.push({ 
+          message: `Great job today! ${todaySummary.lowWastePercentage}% of your choices used low-waste packaging.`, 
+          type: 'encouragement' 
+        });
+      } else if (todaySummary.lowWastePercentage > 50) {
+        insights.push({ 
+          message: `Good progress today with ${todaySummary.lowWastePercentage}% low-waste choices.`, 
+          type: 'encouragement' 
+        });
+      } else if (todaySummary.totalChoicesLogged > 0) {
+        insights.push({ 
+          message: `Only ${todaySummary.lowWastePercentage}% of today's choices were low-waste. Keep looking for better options!`, 
+          type: 'warning' 
+        });
+      }
+    }
+
+    // Trend insights
+    if (avgLowWasteLast7Days !== null && todaySummary) {
+      if (todaySummary.lowWastePercentage > avgLowWasteLast7Days + 10) {
+        insights.push({ 
+          message: `You're doing better than your 7-day average! Keep up the momentum.`, 
+          type: 'encouragement' 
+        });
+      } else if (todaySummary.lowWastePercentage < avgLowWasteLast7Days - 10 && todaySummary.totalChoicesLogged > 0) {
+        insights.push({ 
+          message: `Today's choices (${todaySummary.lowWastePercentage}% low-waste) are below your 7-day average (${Math.round(avgLowWasteLast7Days)}%).`, 
+          type: 'warning' 
+        });
+      }
+    }
+
+    // Tips based on data patterns
+    const highWasteItems = logs.filter(log => !log.is_low_waste);
+    if (highWasteItems.length > 0) {
+      // Find most common high-waste packaging type
+      const packagingCounts: Record<string, number> = {};
+      highWasteItems.forEach(item => {
+        const packagingType = item.packaging_type;
+        packagingCounts[packagingType] = (packagingCounts[packagingType] || 0) + 1;
+      });
+      
+      let mostCommonHighWasteType = '';
+      let highestCount = 0;
+      Object.entries(packagingCounts).forEach(([type, count]) => {
+        if (count > highestCount) {
+          mostCommonHighWasteType = type;
+          highestCount = count;
+        }
+      });
+      
+      if (mostCommonHighWasteType) {
+        const packagingInfo = packagingTypes.find(p => p.id === mostCommonHighWasteType);
+        if (packagingInfo) {
+          insights.push({ 
+            message: `Tip: Look for alternatives to ${packagingInfo.label.toLowerCase()}, which appears in ${highestCount} of your logs.`, 
+            type: 'tip' 
+          });
+        }
+      }
+    }
+
+    // Add general tips if few insights
+    if (insights.length < 2) {
+      insights.push({ 
+        message: `Tip: Try buying in bulk with your own containers to reduce packaging waste.`, 
+        type: 'tip' 
+      });
+      insights.push({ 
+        message: `Tip: Look for items packaged in glass, paper, or metal instead of plastic when possible.`, 
+        type: 'tip' 
+      });
+    }
+
+    return insights;
+  };
+  // --- END ADDITION ---
+
   return (
     <div className="container mx-auto p-4 md:p-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Plastic-Free Packaging Swapper</h1>
+        <h1 className="text-3xl font-bold">Sustainable Packaging Swapper</h1>
         <Link to="/dashboard">
           <Button variant="outline">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -564,6 +746,102 @@ const PackagingSwapPage = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* --- START ADDITION: Insights and Tips Section --- */}
+        {packagingSummaryData.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Your Insights & Tips</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {generatePackagingInsightsAndTips(packagingSummaryData, userLogs).map((insight, idx) => (
+                  <p key={idx} className={
+                    insight.type === 'encouragement' ? 'text-green-600' :
+                    insight.type === 'warning' ? 'text-orange-600' :
+                    insight.type === 'achievement' ? 'text-purple-600' :
+                    'text-blue-600' // for tips
+                  }>
+                    {insight.message}
+                  </p>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {/* --- END ADDITION --- */}
+
+        {/* --- START ADDITION: Charts Section --- */}
+        {packagingSummaryData.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            {/* Low-Waste Percentage Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Low-Waste Choices Over Time</CardTitle>
+                <CardDescription>Percentage of low-waste packaging choices per day</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={packagingSummaryData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="date" 
+                        tickFormatter={(date) => new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      />
+                      <YAxis domain={[0, 100]} label={{ value: '% Low-Waste', angle: -90, position: 'insideLeft' }} />
+                      <Tooltip 
+                        formatter={(value) => [`${value}%`, 'Low-Waste Percentage']}
+                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                      />
+                      <Legend />
+                      <Line 
+                        type="monotone" 
+                        dataKey="lowWastePercentage" 
+                        name="Low-Waste %" 
+                        stroke="#22c55e" 
+                        activeDot={{ r: 8 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+            
+            {/* Swaps Made Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Sustainable Swaps Made</CardTitle>
+                <CardDescription>Count of sustainable packaging swaps per day</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={packagingSummaryData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="date" 
+                        tickFormatter={(date) => new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      />
+                      <YAxis allowDecimals={false} label={{ value: '# of Swaps', angle: -90, position: 'insideLeft' }} />
+                      <Tooltip 
+                        formatter={(value) => [`${value} swap(s)`, 'Swaps Made']}
+                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                      />
+                      <Legend />
+                      <Bar 
+                        dataKey="totalSwapsMade" 
+                        name="Swaps Made" 
+                        fill="#3b82f6" 
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {/* --- END ADDITION --- */}
 
         <h2 className="text-2xl font-semibold mb-4">Your Logged Items</h2>
         {isLoading && userLogs.length === 0 && <p>Loading your logs...</p>}

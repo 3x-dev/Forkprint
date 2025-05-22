@@ -58,9 +58,9 @@ const Dashboard = () => {
       author: "Jason"
     },
     {
-      title: "Plastic-Free Packaging Swapper",
+      title: "Sustainable Packaging Swapper",
       icon: <ShoppingBag className="h-8 w-8 text-blue-600" />,
-      description: "Buy foods with low-waste or no plastic packaging. Log packaging types, see your score for choosing low-waste options, and track your choice swaps.",
+      description: "Log your packaging choices, track swaps from less sustainable to more sustainable options, and see your positive impact grow.",
       goal: "Made by Aryan",
       buttonText: "Log Packaging",
       path: "/feature/packaging-swap",

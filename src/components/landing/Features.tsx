@@ -6,8 +6,8 @@ const features = [
     description: `Track food expiration dates with reminders and composting guidance to reduce food waste.`,
   },
   {
-    name: 'Plastic-Free Packaging Swapping',
-    description: `Log your packaging choices and track your progress towards using less high waste packaging.`,
+    name: 'Sustainable Packaging Swapping',
+    description: `Log your packaging choices and track your progress towards using less high waste packaging and making sustainable swaps.`,
   },
   {
     name: 'Food Waste Tracker',
