@@ -1,7 +1,7 @@
 import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { BarChart2, ShoppingBag, Trash2, ChevronRight, Package } from "lucide-react";
+import { Apple, ShoppingBag, Trash2, ChevronRight, Package } from "lucide-react";
 import * as React from "react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -50,7 +50,7 @@ const Dashboard = () => {
   const features = [
     {
       title: "Food Expiry Tracker",
-      icon: <BarChart2 className="h-8 w-8 text-green-600" />,
+      icon: <Apple className="h-8 w-8 text-green-600" />,
       description: "Reduce household food waste. Track perishables, get expiry reminders, and learn if expired items are compostable or must be trashed.",
       goal: "Made by Jason",
       buttonText: "Track Expiries",

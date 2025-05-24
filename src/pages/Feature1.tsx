@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { PlusCircle, Trash2, Edit3, ImageOff, ChevronDown, ChevronUp, ChefHat, ArrowLeft } from 'lucide-react'; // Icons
+import { PlusCircle, Trash2, Edit3, ImageOff, ChevronDown, ChevronUp, ChefHat, ArrowLeft, Trash } from 'lucide-react'; // Icons
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area"; // For scrollable recipe content
 import { Lightbulb } from 'lucide-react'; // Icon for suggest recipes button
@@ -138,6 +138,17 @@ const FoodExpiryPage: React.FC = () => {
   const [lastFreshFetchTime, setLastFreshFetchTime] = useState<number | null>(null);
   const [initialCacheLoadAttempted, setInitialCacheLoadAttempted] = useState(false);
   const [expiredItems, setExpiredItems] = useState<FoodItem[]>([]);
+  
+  // Edit functionality state
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editExpiryDate, setEditExpiryDate] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+
+  // Disposal guidance state
+  const [isDisposalModalOpen, setIsDisposalModalOpen] = useState(false);
+  const [selectedDisposalItem, setSelectedDisposalItem] = useState<FoodItem | null>(null);
+  const [disposalGuidance, setDisposalGuidance] = useState<string>('');
+  const [isFetchingDisposal, setIsFetchingDisposal] = useState(false);
 
   // Fetch food items from Supabase
   const fetchFridgeItems = async () => {
@@ -427,23 +438,211 @@ const FoodExpiryPage: React.FC = () => {
     }
   };
 
+  const handleEditExpiryDate = (item: FoodItem) => {
+    setEditingItemId(item.id);
+    setEditExpiryDate(item.expiry_date);
+    setEditAmount(item.amount || '');
+  };
+
+  const handleSaveExpiryDate = async (itemId: string, itemName: string) => {
+    if (!user || !editExpiryDate) return;
+
+    setIsLoading(true);
+    try {
+      const updateData: { expiry_date: string; amount?: string | null } = {
+        expiry_date: editExpiryDate
+      };
+      
+      // Update amount (allow clearing it by setting to null if empty)
+      updateData.amount = editAmount.trim() || null;
+
+      const { error } = await supabase
+        .from('food_items')
+        .update(updateData)
+        .eq('id', itemId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setFridgeItems(prevItems => 
+        prevItems.map(item => 
+          item.id === itemId 
+            ? { ...item, expiry_date: editExpiryDate, amount: editAmount.trim() || null }
+            : item
+        ).sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime())
+      );
+
+      setEditingItemId(null);
+      setEditExpiryDate('');
+      setEditAmount('');
+      toast.success(`Updated "${itemName}".`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error("Failed to update item.", { description: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+    setEditExpiryDate('');
+    setEditAmount('');
+  };
+
+  // Disposal Guidance Function
+  const getDisposalGuidance = async (item: FoodItem) => {
+    if (!OPENROUTER_API_KEY) {
+      toast.error("Disposal guidance feature is disabled.", { description: "OpenRouter API key is not configured." });
+      return;
+    }
+
+    setSelectedDisposalItem(item);
+    setIsDisposalModalOpen(true);
+    setIsFetchingDisposal(true);
+    setDisposalGuidance('');
+
+    try {
+      const expiry = new Date(item.expiry_date + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const daysPast = Math.floor((today.getTime() - expiry.getTime()) / (1000 * 60 * 60 * 24));
+
+      const prompt = `
+You are a food safety and disposal expert. Please provide detailed guidance for disposing of an expired food item.
+
+Food Item: ${item.name}
+Amount: ${item.amount || 'Not specified'}
+Days Expired: ${daysPast} day${daysPast !== 1 ? 's' : ''}
+Expiry Date: ${expiry.toLocaleDateString()}
+
+Please provide comprehensive disposal guidance covering:
+
+1. **Safety Assessment**: Is it safe to handle? What precautions should be taken?
+2. **Visual/Smell Inspection**: What signs to look for (mold, discoloration, odor, etc.)?
+3. **Disposal Method**: Should it go in trash, compost, or require special disposal?
+4. **Health Risks**: What are the potential health risks if accidentally consumed?
+5. **Environmental Considerations**: Best practices for eco-friendly disposal
+6. **Prevention Tips**: How to avoid this situation in the future
+
+Be specific about the food type and consider factors like:
+- How long it's been expired
+- Common spoilage patterns for this food
+- Bacterial growth concerns
+- Packaging considerations
+- Local waste management best practices
+
+Format your response in clear sections using markdown headers. Be practical, safety-focused, and environmentally conscious.
+      `;
+
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'HTTP-Referer': YOUR_SITE_URL,
+          'X-Title': YOUR_APP_NAME,
+        },
+        body: JSON.stringify({
+          model: 'deepseek/deepseek-chat',
+          messages: [
+            { role: 'system', content: 'You are a food safety and disposal expert with knowledge of proper food waste management, composting, and safety protocols.' },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1500,
+          temperature: 0.3, // Lower temperature for more consistent, factual advice
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("OpenRouter API Error:", errorData);
+        let errorMessage = `API request failed with status ${response.status}`;
+        if (errorData && errorData.error && errorData.error.message) errorMessage = errorData.error.message;
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+        setDisposalGuidance(data.choices[0].message.content);
+      } else {
+        setDisposalGuidance("I couldn't generate disposal guidance at this time. Please consult local food safety guidelines or waste management resources.");
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      console.error("Error fetching disposal guidance:", error);
+      toast.error("Failed to fetch disposal guidance.", { description: errorMessage });
+      setDisposalGuidance("Error loading disposal guidance. Please consult local food safety guidelines or waste management resources for proper disposal methods.");
+    } finally {
+      setIsFetchingDisposal(false);
+    }
+  };
+
   // Calendar Modifiers
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const categorizedDates = fridgeItems.reduce((acc, item) => {
+    const expiryDate = new Date(item.expiry_date + 'T00:00:00');
+    const diffTime = expiryDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      // Already expired
+      acc.expired.push(expiryDate);
+    } else if (diffDays <= 1) {
+      // Today or tomorrow
+      acc.urgent.push(expiryDate);
+    } else if (diffDays <= 5) {
+      // 3-5 days
+      acc.warning.push(expiryDate);
+    } else {
+      // Later than 5 days
+      acc.good.push(expiryDate);
+    }
+    return acc;
+  }, { expired: [] as Date[], urgent: [] as Date[], warning: [] as Date[], good: [] as Date[] });
+
   const expiryDateModifiers = {
-    expiredOrSoon: fridgeItems.map(item => new Date(item.expiry_date + 'T00:00:00')) // Ensure dates are parsed correctly
+    expired: categorizedDates.expired,
+    urgent: categorizedDates.urgent,
+    warning: categorizedDates.warning,
+    good: categorizedDates.good,
   };
   
   const expiryDateModifierStyles = {
-    expiredOrSoon: { // This style will apply to all dates in the `expiredOrSoon` array
+    expired: {
       color: 'white',
-      backgroundColor: '#F87171', // Red-400
+      backgroundColor: '#7F1D1D', // Dark red (red-900)
+      borderRadius: '50%',
+      border: '2px solid #450A0A', // Even darker red border
+      textDecoration: 'line-through',
+    },
+    urgent: {
+      color: 'white',
+      backgroundColor: '#DC2626', // Red (red-600)
       borderRadius: '50%',
     },
-    // You can add more specific styles, e.g., for 'today' or 'selected'
-    // selected: { backgroundColor: '#3B82F6', color: 'white' }, // Example for selected day
+    warning: {
+      color: 'black',
+      backgroundColor: '#FACC15', // Yellow (yellow-400)
+      borderRadius: '50%',
+    },
+    good: {
+      color: 'white',
+      backgroundColor: '#16A34A', // Green (green-600)
+      borderRadius: '50%',
+    },
   };
 
   const handleDateSelect = (date: Date | undefined) => {
-    setSelectedCalendarDate(date); // This will trigger the useEffect to update itemsOnSelectedDate
+    // Prevent deselecting - always keep a date selected
+    if (date) {
+      setSelectedCalendarDate(date); // This will trigger the useEffect to update itemsOnSelectedDate
+    }
+    // If date is undefined (deselection attempt), do nothing - keep current selection
   };
 
   const toggleRecipeExpansion = (recipeId: string) => {
@@ -654,18 +853,43 @@ const FoodExpiryPage: React.FC = () => {
                         const daysPast = Math.floor((today.getTime() - expiry.getTime()) / (1000 * 60 * 60 * 24));
 
                         return (
-                          <li key={item.id} className="text-sm flex items-center p-1.5 border-b border-red-200 last:border-b-0">
-                            {item.image_url ? (
-                              <img src={item.image_url} alt={item.name} className="h-8 w-8 mr-2 rounded object-cover" />
-                            ) : (
-                              <ImageOff className="h-8 w-8 mr-2 text-red-400" />
-                            )}
-                            <div>
-                              <span className="font-medium text-red-700">{item.name}</span>
-                              {item.amount && <span className="text-xs text-red-500 ml-1">({item.amount})</span>}
-                              <p className="text-xs text-red-500">
-                                Expired {daysPast === 0 ? 'today' : `${daysPast} day${daysPast > 1 ? 's' : ''} ago`} (on {expiry.toLocaleDateString()})
-                              </p>
+                          <li key={item.id} className="text-sm flex items-center justify-between p-2 border-b border-red-200 last:border-b-0 bg-white rounded">
+                            <div className="flex items-center flex-1">
+                              {item.image_url ? (
+                                <img src={item.image_url} alt={item.name} className="h-8 w-8 mr-2 rounded object-cover" />
+                              ) : (
+                                <ImageOff className="h-8 w-8 mr-2 text-red-400" />
+                              )}
+                              <div>
+                                <span className="font-medium text-red-700">{item.name}</span>
+                                {item.amount && <span className="text-xs text-red-500 ml-1">({item.amount})</span>}
+                                <p className="text-xs text-red-500">
+                                  Expired {daysPast === 0 ? 'today' : `${daysPast} day${daysPast > 1 ? 's' : ''} ago`} (on {expiry.toLocaleDateString()})
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                                onClick={() => getDisposalGuidance(item)}
+                                disabled={isFetchingDisposal || !OPENROUTER_API_KEY}
+                                title="Get disposal guidance"
+                              >
+                                <Trash className="h-3 w-3 mr-1" />
+                                Guide
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-7 w-7" 
+                                onClick={() => handleDeleteItem(item.id, item.name)} 
+                                disabled={isLoading}
+                                title="Delete from list"
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
                             </div>
                           </li>
                         );
@@ -678,7 +902,29 @@ const FoodExpiryPage: React.FC = () => {
 
             {/* Display items for selected calendar date */}
             <Card>
-                <CardHeader><CardTitle>Expiring on {selectedCalendarDate ? new Date(selectedCalendarDate.toISOString().split('T')[0] + 'T00:00:00').toLocaleDateString() : '...'}</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle>
+                    {selectedCalendarDate ? (() => {
+                      const selectedDate = new Date(selectedCalendarDate.toISOString().split('T')[0] + 'T00:00:00');
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const diffTime = selectedDate.getTime() - today.getTime();
+                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                      
+                      if (diffDays === 0) {
+                        return `Expiring Today! (${selectedDate.toLocaleDateString()})`;
+                      } else if (diffDays === 1) {
+                        return `Expiring Tomorrow (${selectedDate.toLocaleDateString()})`;
+                      } else if (diffDays > 1) {
+                        return `Expiring in ${diffDays} days (${selectedDate.toLocaleDateString()})`;
+                      } else {
+                        // Past date
+                        const daysPast = Math.abs(diffDays);
+                        return `Expired ${daysPast === 1 ? '1 day' : `${daysPast} days`} ago (${selectedDate.toLocaleDateString()})`;
+                      }
+                    })() : '...'}
+                  </CardTitle>
+                </CardHeader>
                 <CardContent>
                     {isLoading && itemsOnSelectedDate.length === 0 && <p className="text-sm text-gray-500">Loading...</p>}
                     {!isLoading && itemsOnSelectedDate.length === 0 && <p className="text-sm text-gray-500">No items expiring on this date.</p>}
@@ -708,15 +954,87 @@ const FoodExpiryPage: React.FC = () => {
                             <ul className="space-y-2 pr-3">
                                 {fridgeItems.map(item => (
                                     <li key={item.id} className="p-2 border rounded-md flex justify-between items-center hover:bg-gray-50 text-sm">
-                                        <div className="flex items-center">
+                                        <div className="flex items-center flex-1">
                                             {item.image_url ? <img src={item.image_url} alt={item.name} className="h-10 w-10 mr-2 rounded object-cover"/> : <div className="h-10 w-10 mr-2 rounded bg-gray-100 flex items-center justify-center"><ImageOff className="h-5 w-5 text-gray-400" /></div>}
-                                            <div>
+                                            <div className="flex-1">
                                                 <p className="font-medium">{item.name}</p>
-                                                <p className="text-xs text-gray-500">Expires: {new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}</p>
-                                                {item.amount && <p className="text-xs text-gray-500">Amount: {item.amount}</p>}
+                                                {editingItemId === item.id ? (
+                                                  <div className="space-y-2 mt-1">
+                                                    <div className="flex items-center space-x-2">
+                                                      <div className="flex flex-col">
+                                                        <label className="text-xs text-gray-500 mb-1">Expiry Date</label>
+                                                        <Input
+                                                          type="date"
+                                                          value={editExpiryDate}
+                                                          onChange={(e) => setEditExpiryDate(e.target.value)}
+                                                          className="h-7 text-xs"
+                                                          style={{ width: '140px' }}
+                                                        />
+                                                      </div>
+                                                      <div className="flex flex-col">
+                                                        <label className="text-xs text-gray-500 mb-1">Amount</label>
+                                                        <Input
+                                                          type="text"
+                                                          value={editAmount}
+                                                          onChange={(e) => setEditAmount(e.target.value)}
+                                                          placeholder="e.g., 1 Gallon, 200g"
+                                                          className="h-7 text-xs"
+                                                          style={{ width: '120px' }}
+                                                        />
+                                                      </div>
+                                                    </div>
+                                                    <div className="flex items-center space-x-2">
+                                                      <Button 
+                                                        size="sm" 
+                                                        className="h-6 px-2 text-xs"
+                                                        onClick={() => handleSaveExpiryDate(item.id, item.name)}
+                                                        disabled={isLoading || !editExpiryDate}
+                                                      >
+                                                        Save
+                                                      </Button>
+                                                      <Button 
+                                                        size="sm" 
+                                                        variant="outline" 
+                                                        className="h-6 px-2 text-xs"
+                                                        onClick={handleCancelEdit}
+                                                        disabled={isLoading}
+                                                      >
+                                                        Cancel
+                                                      </Button>
+                                                    </div>
+                                                  </div>
+                                                ) : (
+                                                  <>
+                                                    <p className="text-xs text-gray-500">Expires: {new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}</p>
+                                                    {item.amount && <p className="text-xs text-gray-500">Amount: {item.amount}</p>}
+                                                  </>
+                                                )}
                                             </div>
                                         </div>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteItem(item.id, item.name)} disabled={isLoading}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                        {editingItemId !== item.id && (
+                                          <div className="flex items-center space-x-2">
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-7 w-7" 
+                                                onClick={() => handleEditExpiryDate(item)} 
+                                                disabled={isLoading}
+                                                title="Edit item details"
+                                              >
+                                                <Edit3 className="h-4 w-4 text-gray-500" />
+                                              </Button>
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-7 w-7" 
+                                                onClick={() => handleDeleteItem(item.id, item.name)} 
+                                                disabled={isLoading}
+                                                title="Delete item"
+                                              >
+                                                <Trash2 className="h-4 w-4 text-red-500" />
+                                              </Button>
+                                          </div>
+                                        )}
                                     </li>
                                 ))}
                             </ul>
@@ -824,6 +1142,73 @@ const FoodExpiryPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Disposal Guidance Modal */}
+      <Dialog open={isDisposalModalOpen} onOpenChange={setIsDisposalModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Trash className="h-5 w-5 mr-2 text-red-500" />
+              Disposal Guide: {selectedDisposalItem?.name}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedDisposalItem && (
+                <span className="text-sm text-gray-600">
+                  {selectedDisposalItem.amount && `Amount: ${selectedDisposalItem.amount} • `}
+                  Expired: {(() => {
+                    const expiry = new Date(selectedDisposalItem.expiry_date + 'T00:00:00');
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const daysPast = Math.floor((today.getTime() - expiry.getTime()) / (1000 * 60 * 60 * 24));
+                    return `${daysPast} day${daysPast !== 1 ? 's' : ''} ago`;
+                  })()}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-auto">
+            {isFetchingDisposal ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500"></div>
+                <span className="ml-3 text-gray-600">Generating disposal guidance...</span>
+              </div>
+            ) : disposalGuidance ? (
+              <div className="prose prose-sm max-w-none py-4">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {disposalGuidance}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-gray-500">
+                No disposal guidance available.
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsDisposalModalOpen(false)}
+            >
+              Close
+            </Button>
+            {selectedDisposalItem && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  handleDeleteItem(selectedDisposalItem.id, selectedDisposalItem.name);
+                  setIsDisposalModalOpen(false);
+                }}
+                disabled={isLoading}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Mark as Disposed
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

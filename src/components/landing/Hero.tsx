@@ -19,7 +19,14 @@ import {
   Sprout,
   Trash2,
   Zap,
-  Sun
+  Grape,
+  Fish,
+  Wheat,
+  TreePine,
+  Star,
+  Cookie,
+  IceCream2,
+  Sandwich
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -33,75 +40,96 @@ export function Hero() {
       <div className="px-6 py-24 sm:px-6 sm:py-32 lg:px-8">
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-white to-green-50"></div>
         
-        {/* Decorative elements - floating icons */}
-        <div className="absolute top-20 left-10 text-green-200 animate-float opacity-40">
-          <Utensils size={36} />
+        {/* Decorative elements - floating icons with varied sizes, colors, and animations */}
+        <div className="absolute top-[8%] left-[3%] text-emerald-400 animate-float opacity-35 transform-gpu will-change-transform" style={{ animationDelay: "0s" }}>
+          <Utensils size={42} />
         </div>
-        <div className="absolute bottom-20 left-1/4 text-teal-200 animate-float-slow opacity-50">
-          <Leaf size={48} />
+        <div className="absolute bottom-[12%] left-[22%] text-teal-500 animate-float-slow opacity-45 transform-gpu will-change-transform" style={{ animationDelay: "1.5s" }}>
+          <Leaf size={56} />
         </div>
-        <div className="absolute top-1/3 right-16 text-green-300 animate-float animate-pulse-opacity">
-          <Recycle size={40} />
+        <div className="absolute top-[25%] right-[8%] text-lime-400 animate-float opacity-30 transform-gpu will-change-transform" style={{ animationDelay: "0.8s" }}>
+          <Recycle size={38} />
         </div>
-        <div className="absolute top-2/3 right-1/4 text-teal-300 animate-float-slow opacity-40">
-          <Leaf size={32} />
-        </div>
-        
-        {/* Additional decorative elements */}
-        <div className="absolute top-40 right-[30%] text-green-200 animate-float-slow opacity-30">
-          <AppleIcon size={24} />
-        </div>
-        <div className="absolute bottom-40 right-[15%] text-teal-300 animate-float opacity-40">
-          <Droplet size={28} />
-        </div>
-        <div className="absolute top-[45%] left-[15%] text-green-300 animate-float opacity-35">
-          <Coffee size={32} />
-        </div>
-        <div className="absolute top-[35%] left-[40%] text-green-200 animate-float-slow opacity-25">
-          <ShoppingBag size={36} />
-        </div>
-        <div className="absolute bottom-[30%] left-[10%] text-teal-300 animate-float opacity-40">
-          <Recycle size={28} />
-        </div>
-        <div className="absolute top-[20%] right-[10%] text-green-200 animate-float-slow opacity-30">
-          <Leaf size={20} />
+        <div className="absolute top-[68%] right-[18%] text-cyan-400 animate-float-slow opacity-50 transform-gpu will-change-transform" style={{ animationDelay: "2.2s" }}>
+          <Leaf size={24} />
         </div>
         
-        {/* Even more decorative elements */}
-        <div className="absolute top-[15%] left-[28%] text-green-300 animate-float opacity-20">
-          <Carrot size={28} />
+        <div className="absolute top-[42%] right-[32%] text-green-300 animate-float opacity-25 transform-gpu will-change-transform" style={{ animationDelay: "1.2s" }}>
+          <AppleIcon size={32} />
         </div>
-        <div className="absolute bottom-[15%] right-[28%] text-teal-400 animate-float-slow opacity-30">
-          <Cherry size={22} />
+        <div className="absolute bottom-[38%] right-[12%] text-blue-400 animate-float-slow opacity-40 transform-gpu will-change-transform" style={{ animationDelay: "0.3s" }}>
+          <Droplet size={36} />
         </div>
-        <div className="absolute top-[60%] right-[35%] text-amber-300 animate-float opacity-25">
-          <Banana size={30} />
+        <div className="absolute top-[52%] left-[8%] text-amber-500 animate-float opacity-45 transform-gpu will-change-transform" style={{ animationDelay: "1.8s" }}>
+          <Coffee size={28} />
         </div>
-        <div className="absolute top-[25%] left-[50%] text-orange-300 animate-float-slow opacity-20">
-          <Pizza size={32} />
+        <div className="absolute top-[28%] left-[45%] text-emerald-300 animate-float-slow opacity-20 transform-gpu will-change-transform" style={{ animationDelay: "0.6s" }}>
+          <ShoppingBag size={44} />
         </div>
-        <div className="absolute top-[55%] left-[60%] text-gray-300 animate-float opacity-15">
-          <EggOff size={24} />
+        <div className="absolute bottom-[28%] left-[6%] text-teal-600 animate-float opacity-35 transform-gpu will-change-transform" style={{ animationDelay: "2.0s" }}>
+          <Recycle size={20} />
         </div>
-        <div className="absolute bottom-[45%] right-[5%] text-blue-200 animate-float-slow opacity-30">
-          <Milk size={26} />
+        <div className="absolute top-[16%] right-[5%] text-green-500 animate-float-slow opacity-25 transform-gpu will-change-transform" style={{ animationDelay: "1.4s" }}>
+          <Leaf size={16} />
         </div>
-        <div className="absolute top-[5%] right-[45%] text-green-400 animate-float opacity-20">
-          <Sprout size={18} />
+        
+        <div className="absolute top-[12%] left-[35%] text-orange-400 animate-float opacity-30 transform-gpu will-change-transform" style={{ animationDelay: "0.9s" }}>
+          <Carrot size={34} />
         </div>
-        <div className="absolute bottom-[10%] left-[45%] text-red-200 animate-float-slow opacity-25">
-          <Trash2 size={20} />
+        <div className="absolute bottom-[8%] right-[35%] text-pink-400 animate-float-slow opacity-40 transform-gpu will-change-transform" style={{ animationDelay: "1.6s" }}>
+          <Cherry size={18} />
         </div>
-        <div className="absolute top-[38%] left-[5%] text-yellow-300 animate-float opacity-15">
-          <Zap size={22} />
+        <div className="absolute top-[72%] right-[42%] text-yellow-400 animate-float opacity-35 transform-gpu will-change-transform" style={{ animationDelay: "0.4s" }}>
+          <Banana size={40} />
         </div>
-        <div className="absolute top-[10%] left-[18%] text-yellow-200 animate-float-slow opacity-20">
-          <Sun size={24} />
+        <div className="absolute top-[18%] left-[58%] text-red-400 animate-float-slow opacity-20 transform-gpu will-change-transform" style={{ animationDelay: "2.4s" }}>
+          <Pizza size={48} />
+        </div>
+        <div className="absolute top-[48%] left-[68%] text-gray-400 animate-float opacity-15 transform-gpu will-change-transform" style={{ animationDelay: "1.0s" }}>
+          <EggOff size={22} />
+        </div>
+        <div className="absolute bottom-[42%] right-[2%] text-indigo-300 animate-float-slow opacity-35 transform-gpu will-change-transform" style={{ animationDelay: "0.7s" }}>
+          <Milk size={30} />
+        </div>
+        <div className="absolute top-[3%] right-[52%] text-lime-500 animate-float opacity-25 transform-gpu will-change-transform" style={{ animationDelay: "1.7s" }}>
+          <Sprout size={14} />
+        </div>
+        <div className="absolute bottom-[5%] left-[52%] text-rose-300 animate-float-slow opacity-30 transform-gpu will-change-transform" style={{ animationDelay: "0.5s" }}>
+          <Trash2 size={26} />
+        </div>
+        <div className="absolute top-[38%] left-[2%] text-yellow-500 animate-float opacity-20 transform-gpu will-change-transform" style={{ animationDelay: "1.3s" }}>
+          <Zap size={32} />
+        </div>
+        
+        {/* New decorative icons with even more variation */}
+        <div className="absolute top-[62%] left-[28%] text-purple-400 animate-float-slow opacity-35 transform-gpu will-change-transform" style={{ animationDelay: "1.9s" }}>
+          <Grape size={46} />
+        </div>
+        <div className="absolute bottom-[32%] right-[48%] text-sky-400 animate-float opacity-40 transform-gpu will-change-transform" style={{ animationDelay: "0.2s" }}>
+          <Fish size={52} />
+        </div>
+        <div className="absolute top-[35%] right-[58%] text-amber-600 animate-float-slow opacity-25 transform-gpu will-change-transform" style={{ animationDelay: "2.1s" }}>
+          <Wheat size={38} />
+        </div>
+        <div className="absolute bottom-[48%] left-[42%] text-green-600 animate-float opacity-30 transform-gpu will-change-transform" style={{ animationDelay: "0.1s" }}>
+          <TreePine size={60} />
+        </div>
+        <div className="absolute top-[8%] right-[28%] text-yellow-300 animate-float-slow opacity-20 transform-gpu will-change-transform" style={{ animationDelay: "1.1s" }}>
+          <Star size={12} />
+        </div>
+        <div className="absolute top-[58%] right-[3%] text-orange-500 animate-float opacity-45 transform-gpu will-change-transform" style={{ animationDelay: "2.3s" }}>
+          <Cookie size={36} />
+        </div>
+        <div className="absolute bottom-[18%] left-[15%] text-cyan-500 animate-float-slow opacity-35 transform-gpu will-change-transform" style={{ animationDelay: "0.9s" }}>
+          <IceCream2 size={42} />
+        </div>
+        <div className="absolute top-[82%] right-[12%] text-amber-400 animate-float opacity-25 transform-gpu will-change-transform" style={{ animationDelay: "1.5s" }}>
+          <Sandwich size={50} />
         </div>
         
         <div className="mx-auto max-w-2xl text-center relative z-10">
           <h1 
-            className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl animate-slide-in-up"
+            className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl animate-slide-in-up transform-gpu will-change-transform"
             style={{ animationDelay: "200ms" }}
           >
             Fork Over 
@@ -109,20 +137,20 @@ export function Hero() {
           </h1>
           
           <p 
-            className="mt-6 text-lg leading-8 text-gray-600 animate-fade-in"
+            className="mt-6 text-lg leading-8 text-gray-600 animate-fade-in transform-gpu will-change-transform"
             style={{ animationDelay: "400ms" }}
           >
             Track food expiration dates, reduce food waste, and make the most of your groceries with Forkprint.
           </p>
           
           <div 
-            className="mt-10 flex items-center justify-center gap-x-6 animate-fade-in"
+            className="mt-10 flex items-center justify-center gap-x-6 animate-fade-in transform-gpu will-change-transform"
             style={{ animationDelay: "600ms" }}
           >
             {!user ? (
               <Button 
                 onClick={() => signInWithGoogle()} 
-                className="flex items-center gap-2 rounded-full px-6 py-6 text-base font-semibold shadow-lg hover:bg-green-600 transition-all duration-200 bg-green-500"
+                className="flex items-center gap-2 rounded-full px-6 py-6 text-base font-semibold shadow-lg hover:bg-green-600 transition-all duration-300 bg-green-500 transform hover:scale-105"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24">
                   <path
@@ -147,7 +175,7 @@ export function Hero() {
             ) : (
               <Button 
                 onClick={() => navigate('/dashboard')}
-                className="flex items-center gap-2 rounded-full px-6 py-6 text-base font-semibold shadow-lg hover:bg-green-600 transition-all duration-200 bg-green-500"
+                className="flex items-center gap-2 rounded-full px-6 py-6 text-base font-semibold shadow-lg hover:bg-green-600 transition-all duration-300 bg-green-500 transform hover:scale-105"
               >
                 Go to Dashboard
                 <ArrowRight className="h-5 w-5" />

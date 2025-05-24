@@ -34,11 +34,11 @@ export function Features() {
       
       <div className="mx-auto max-w-7xl px-6 lg:px-8 relative z-10">
         <div className="mx-auto max-w-2xl lg:text-center">
-          <h2 className="text-base font-semibold leading-7 text-green-600">Forkprint Features</h2>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+          <h2 className="text-base font-semibold leading-7 text-green-600 animate-fade-in transform-gpu will-change-transform" style={{ animationDelay: "100ms" }}>Forkprint Features</h2>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl animate-slide-in-up transform-gpu will-change-transform" style={{ animationDelay: "200ms" }}>
             Manage Your Food, Minimize Your Waste
           </p>
-          <p className="mt-6 text-lg leading-8 text-gray-600">
+          <p className="mt-6 text-lg leading-8 text-gray-600 animate-fade-in transform-gpu will-change-transform" style={{ animationDelay: "300ms" }}>
             Forkprint helps you reduce food waste, save money, and ensure you always have what you need, smartly.
           </p>
         </div>
@@ -47,8 +47,8 @@ export function Features() {
             {features.map((feature, index) => (
               <div 
                 key={feature.name} 
-                className="relative pl-12 opacity-0 animate-slide-in-up"
-                style={{ animationDelay: `${index * 200 + 300}ms` }}
+                className="relative pl-12 opacity-0 animate-slide-in-up transform-gpu will-change-transform"
+                style={{ animationDelay: `${index * 150 + 500}ms` }}
               >
                 <dt className="text-base font-semibold leading-7 text-gray-900">
                   <CheckCircle2 className="absolute left-0 top-1 h-8 w-8 text-green-500" />

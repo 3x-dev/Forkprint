@@ -22,7 +22,7 @@ export function Logo({ size = "md", asLink = true }: LogoProps) {
   const logoContent = (
     <div className="flex items-center gap-2">
       <img src={logoUrl} alt="Forkprint Logo" className={`${imageSizeClasses[size]}`} />
-      <span className={`font-bold ${sizeClasses[size]} bg-gradient-to-r from-forkprint-green to-forkprint-dark-green bg-clip-text text-transparent`}>
+      <span className={`font-bold ${sizeClasses[size]} text-forkprint-green`}>
         Forkprint
       </span>
     </div>
