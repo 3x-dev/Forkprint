@@ -58,65 +58,87 @@ const generateIngredientsKey = (itemNames: string[]): string => {
 
 // Enhanced Parsing Function
 const parseRecipesMarkdown = (markdown: string, source: 'api' | 'cache', cachedAt?: string): RecipeDetail[] => {
-    if (!markdown) return [];
-    const recipeBlocks = markdown.split('%%%---RECIPE_SEPARATOR---%%%');
-    const recipes: RecipeDetail[] = [];
+  if (!markdown) return [];
+  
+  // Split by separator and filter out empty blocks
+  const recipeBlocks = markdown
+    .split('%%%---RECIPE_SEPARATOR---%%%')
+    .map(block => block.trim())
+    .filter(block => block.length > 0);
+  
+  const recipes: RecipeDetail[] = [];
 
-    recipeBlocks.forEach((block, index) => {
-        if (block.trim() === "") return;
+  recipeBlocks.forEach((block, index) => {
+    if (block.trim() === "") return;
 
-        let name = `Recipe ${index + 1}`;
-        let description = "No description provided.";
-        let ingredients = "No ingredients listed.";
-        let instructions = "No instructions provided.";
+    let name = `Recipe ${index + 1}`;
+    let description = "No description provided.";
+    let ingredients = "No ingredients listed.";
+    let instructions = "No instructions provided.";
 
-        // Attempt to extract name (## Recipe Name)
-        const nameMatch = block.match(/^##\s*(.*)/m);
-        if (nameMatch && nameMatch[1]) {
-            name = nameMatch[1].trim();
+    try {
+      // Extract name (## Recipe Name)
+      const nameMatch = block.match(/^##\s*(.+?)$/m);
+      if (nameMatch && nameMatch[1]) {
+        name = nameMatch[1].trim();
+      }
+      
+      // Extract description (**Description:** content)
+      const descriptionMatch = block.match(/\*\*Description:\*\*\s*(.+?)(?=\n|$)/i);
+      if (descriptionMatch && descriptionMatch[1]) {
+        description = descriptionMatch[1].trim();
+      }
+
+      // Extract ingredients (**Ingredients:** until **Instructions:**)
+      const ingredientsMatch = block.match(/\*\*Ingredients:\*\*([\s\S]*?)\*\*Instructions:\*\*/i);
+      if (ingredientsMatch && ingredientsMatch[1]) {
+        ingredients = ingredientsMatch[1].trim();
+      } else {
+        // Fallback: try to find ingredients section without instructions
+        const ingredientsOnlyMatch = block.match(/\*\*Ingredients:\*\*([\s\S]*?)(?=\*\*|$)/i);
+        if (ingredientsOnlyMatch && ingredientsOnlyMatch[1]) {
+          ingredients = ingredientsOnlyMatch[1].trim();
         }
-        
-        // Description: Heuristic - first paragraph after name (or start if no name) until "Ingredients"
-        const descriptionMatch = block.match(/(?:^##\s*.*\n)?([\s\S]*?)(Ingredients:|Instructions:|$)/im);
-        if (descriptionMatch && descriptionMatch[1] && descriptionMatch[1].trim() !== "") {
-            description = descriptionMatch[1].trim();
-        }
+      }
 
+      // Extract instructions (**Instructions:** to end)
+      const instructionsMatch = block.match(/\*\*Instructions:\*\*([\s\S]*)/i);
+      if (instructionsMatch && instructionsMatch[1]) {
+        instructions = instructionsMatch[1].trim();
+      }
 
-        // Ingredients: text between "Ingredients:" and "Instructions:"
-        const ingredientsMatch = block.match(/Ingredients:([\s\S]*?)Instructions:/im);
-        if (ingredientsMatch && ingredientsMatch[1]) {
-            ingredients = ingredientsMatch[1].trim();
-        } else { // Fallback if "Instructions:" is missing but "Ingredients:" exists
-            const ingredientsOnlyMatch = block.match(/Ingredients:([\s\S]*)/im);
-            if (ingredientsOnlyMatch && ingredientsOnlyMatch[1]) {
-                ingredients = ingredientsOnlyMatch[1].trim();
-            }
-        }
+      // Validate that we have meaningful content
+      if (name === `Recipe ${index + 1}` && !description.includes("No description") && !ingredients.includes("No ingredients")) {
+        console.warn(`Recipe ${index + 1} may have parsing issues:`, { name, description: description.substring(0, 50) });
+      }
 
-        // Instructions: text after "Instructions:"
-        const instructionsMatch = block.match(/Instructions:([\s\S]*)/im);
-        if (instructionsMatch && instructionsMatch[1]) {
-            instructions = instructionsMatch[1].trim();
-        }
-        
-        // Clean up description from potential ingredient/instruction keywords if they were not separators
-        if(description.toLowerCase().includes("ingredients:")) description = description.substring(0, description.toLowerCase().indexOf("ingredients:")).trim();
-        if(description.toLowerCase().includes("instructions:")) description = description.substring(0, description.toLowerCase().indexOf("instructions:")).trim();
+      recipes.push({
+        id: `${source}-${Date.now()}-${index}`,
+        name,
+        description,
+        ingredients,
+        instructions,
+        isExpanded: false,
+        source,
+        cachedAt: source === 'cache' ? cachedAt : undefined
+      });
+    } catch (error) {
+      console.error(`Error parsing recipe block ${index + 1}:`, error);
+      // Still add a fallback recipe so user knows something went wrong
+      recipes.push({
+        id: `${source}-${Date.now()}-${index}-error`,
+        name: `Recipe ${index + 1} (Parsing Error)`,
+        description: "There was an error parsing this recipe. Please try generating new recipes.",
+        ingredients: "Could not parse ingredients.",
+        instructions: "Could not parse instructions.",
+        isExpanded: false,
+        source,
+        cachedAt: source === 'cache' ? cachedAt : undefined
+      });
+    }
+  });
 
-
-        recipes.push({
-            id: `${source}-${Date.now()}-${index}`, // Simple unique ID
-            name,
-            description,
-            ingredients,
-            instructions,
-            isExpanded: false,
-            source,
-            cachedAt: source === 'cache' ? cachedAt : undefined
-        });
-    });
-    return recipes;
+  return recipes;
 };
 
 const FRESH_FETCH_COOLDOWN_MS = 30000; // 30 seconds cooldown for fresh fetches
@@ -684,88 +706,139 @@ Format your response in clear sections using markdown headers. Be practical, saf
       nonExpiredItems = nonExpiredItems.slice(0, MAX_INGREDIENTS_FOR_LLM); 
     }
     
-    setIsFetchingRecipes(true); // Set true when actively fetching (cache or API)
+    setIsFetchingRecipes(true);
     const currentIngredientsKey = generateIngredientsKey(itemNamesArray); 
 
-    if (!fetchNew) { // Try cache first if not forcing new
-        try {
-            const { data: cachedData, error: cacheError } = await supabase
-                .from('recipe_suggestions')
-                .select('recipes_markdown, created_at')
-                .eq('user_id', user!.id)
-                .eq('ingredients_key', currentIngredientsKey)
-                .maybeSingle();
+    if (!fetchNew) {
+      try {
+        const { data: cachedData, error: cacheError } = await supabase
+          .from('recipe_suggestions')
+          .select('recipes_markdown, created_at')
+          .eq('user_id', user!.id)
+          .eq('ingredients_key', currentIngredientsKey)
+          .maybeSingle();
 
-            if (cacheError) throw cacheError;
+        if (cacheError) throw cacheError;
 
-            if (cachedData) {
-                toast.success("Loaded cached recipe suggestions!");
-                const parsedCache = parseRecipesMarkdown(cachedData.recipes_markdown, 'cache', new Date(cachedData.created_at).toLocaleDateString());
-                setSuggestedRecipesList(parsedCache);
-                setIsFetchingRecipes(false); // Done fetching
-                return; 
-            }
-        } catch (error) {
-            console.error("Error fetching cached recipes during manual suggest:", error);
+        if (cachedData) {
+          toast.success("Loaded cached recipe suggestions!");
+          const parsedCache = parseRecipesMarkdown(cachedData.recipes_markdown, 'cache', new Date(cachedData.created_at).toLocaleDateString());
+          setSuggestedRecipesList(parsedCache);
+          setIsFetchingRecipes(false);
+          return; 
         }
+      } catch (error) {
+        console.error("Error fetching cached recipes during manual suggest:", error);
+      }
     }
 
     // Fetch from OpenRouter API
     toast.info(fetchNew ? "Fetching fresh recipes from AI..." : "No cached suggestions for these items. Fetching new recipes from AI...");
     const itemNamesString = itemNamesArray.join(', ');
-    const prompt = `
-      You are a helpful assistant that suggests recipes.
-      Given the following food items currently in a fridge: ${itemNamesString}.
+    
+    // Improved prompt with strict formatting requirements and safeguards
+    const prompt = `You are a recipe suggestion assistant. Your ONLY task is to suggest recipes using the provided ingredients.
 
-      Please suggest 2-3 simple recipes that primarily use these ingredients.
-      For each recipe, provide:
-      1. Recipe Name (as a markdown heading, e.g., ## Recipe Name)
-      2. A brief, enticing description (1-2 sentences).
-      3. Ingredients List: Clearly list all ingredients needed using markdown bullet points (e.g., - Ingredient 1).
-         You can mention if an ingredient is from the provided list by adding (from fridge) next to it.
-      4. Instructions: Provide clear, step-by-step numbered instructions (e.g., 1. Step one).
+AVAILABLE INGREDIENTS: ${itemNamesString}
 
-      Format the response clearly using Markdown.
-      IMPORTANT: Between each complete recipe (name, description, ingredients, instructions),
-      insert ONLY the following separator on its own line:
-      %%%---RECIPE_SEPARATOR---%%%
+STRICT REQUIREMENTS:
+1. Suggest exactly 3 recipes
+2. Each recipe MUST use at least 2 ingredients from the provided list
+3. You may suggest common pantry items (salt, pepper, oil, etc.) but prioritize the provided ingredients
+4. Follow the EXACT format below - no deviations allowed
+5. Do not include any text outside the recipe format
+6. Do not provide cooking tips, nutritional information, or other commentary
 
-      Ensure the recipes are relatively simple and common.
-    `;
+MANDATORY FORMAT FOR EACH RECIPE:
+## [Recipe Name]
+
+**Description:** [One sentence describing the dish]
+
+**Ingredients:**
+- [Ingredient 1] (from fridge: [ingredient name if from provided list])
+- [Ingredient 2] (from fridge: [ingredient name if from provided list])
+- [Additional ingredients as needed]
+
+**Instructions:**
+1. [First step]
+2. [Second step]
+3. [Continue with numbered steps]
+
+%%%---RECIPE_SEPARATOR---%%%
+
+EXAMPLE FORMAT:
+## Scrambled Eggs with Cheese
+
+**Description:** Quick and creamy scrambled eggs with melted cheese.
+
+**Ingredients:**
+- 3 eggs (from fridge: eggs)
+- 1/4 cup shredded cheese (from fridge: cheese)
+- 2 tbsp butter
+- Salt and pepper to taste
+
+**Instructions:**
+1. Crack eggs into a bowl and whisk with salt and pepper.
+2. Heat butter in a non-stick pan over medium-low heat.
+3. Pour in eggs and gently stir continuously until almost set.
+4. Add cheese and fold in gently until melted.
+5. Serve immediately while hot.
+
+%%%---RECIPE_SEPARATOR---%%%
+
+Now provide exactly 3 recipes following this format. Start immediately with the first recipe:`;
+
     try {
       const response = await fetch(OPENROUTER_API_URL, { 
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-                'HTTP-Referer': YOUR_SITE_URL,
-                'X-Title': YOUR_APP_NAME,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'HTTP-Referer': YOUR_SITE_URL,
+          'X-Title': YOUR_APP_NAME,
+        },
+        body: JSON.stringify({
+          model: 'deepseek/deepseek-chat',
+          messages: [
+            { 
+              role: 'system', 
+              content: 'You are a recipe assistant that ONLY provides recipes in the exact format requested. You do not provide any other information, commentary, or text outside the specified format. You must follow the format precisely and include the required separators.' 
             },
-            body: JSON.stringify({
-                model: 'deepseek/deepseek-chat',
-                messages: [
-                    { role: 'system', content: 'You are a helpful recipe suggestion assistant.' },
-                    { role: 'user', content: prompt },
-                ],
-                max_tokens: 2000, 
-                temperature: 0.7,
-            }),
-        });
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 2500, 
+          temperature: 0.5, // Lower temperature for more consistent formatting
+        }),
+      });
+
       if (!response.ok) { 
-            const errorData = await response.json();
-            console.error("OpenRouter API Error:", errorData);
-            let errorMessage = `API request failed with status ${response.status}`;
-            if (errorData && errorData.error && errorData.error.message) errorMessage = errorData.error.message;
-            throw new Error(errorMessage);
-        }
+        const errorData = await response.json();
+        console.error("OpenRouter API Error:", errorData);
+        let errorMessage = `API request failed with status ${response.status}`;
+        if (errorData && errorData.error && errorData.error.message) errorMessage = errorData.error.message;
+        throw new Error(errorMessage);
+      }
+
       const data = await response.json();
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
         const recipesMarkdown = data.choices[0].message.content;
-        const newRecipes = parseRecipesMarkdown(recipesMarkdown, 'api');
+        
+        // Clean up the response to remove any extra text before/after recipes
+        const cleanedMarkdown = recipesMarkdown
+          .replace(/^[^#]*(?=##)/s, '') // Remove text before first recipe
+          .replace(/%%%---RECIPE_SEPARATOR---%%%\s*$/, ''); // Remove trailing separator
+        
+        const newRecipes = parseRecipesMarkdown(cleanedMarkdown, 'api');
+        
+        if (newRecipes.length === 0) {
+          toast.error("Failed to parse recipes from AI response. Please try again.");
+          setIsFetchingRecipes(false);
+          return;
+        }
         
         setSuggestedRecipesList(prevList => {
-            const oldCachedRecipes = prevList.filter(r => r.source === 'cache' && r.id.startsWith('cache-')); // Ensure we only keep truly cached ones
-            return [...newRecipes, ...oldCachedRecipes];
+          const oldCachedRecipes = prevList.filter(r => r.source === 'cache' && r.id.startsWith('cache-'));
+          return [...newRecipes, ...oldCachedRecipes];
         });
         setExpandedRecipeId(null); 
         if (fetchNew) {
@@ -778,24 +851,27 @@ Format your response in clear sections using markdown headers. Be practical, saf
             .upsert({
               user_id: user.id,
               ingredients_key: currentIngredientsKey,
-              recipes_markdown: recipesMarkdown,
+              recipes_markdown: cleanedMarkdown,
               created_at: new Date().toISOString(), 
             }, { onConflict: 'user_id, ingredients_key' });
-          if (upsertError) { console.error("Error upserting recipe suggestion:", upsertError); toast.error("Could not cache recipes."); }
-          else { toast.success("New recipes fetched and cached!"); }
+          if (upsertError) { 
+            console.error("Error upserting recipe suggestion:", upsertError); 
+            toast.error("Could not cache recipes."); 
+          } else { 
+            toast.success("New recipes fetched and cached!"); 
+          }
         }
       } else {  
-            toast.info("AI couldn't come up with recipes this time. Try adjusting your items or try again.");
-            // Only clear if no recipes were ever loaded or if this was a fresh fetch that failed to get new ones
-            if (suggestedRecipesList.length === 0 || fetchNew) setSuggestedRecipesList([]);
-        }
-    } catch (error) {  
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-        console.error("Error fetching recipes:", error);
-        toast.error("Failed to fetch recipes.", { description: errorMessage });
+        toast.info("AI couldn't come up with recipes this time. Try adjusting your items or try again.");
         if (suggestedRecipesList.length === 0 || fetchNew) setSuggestedRecipesList([]);
+      }
+    } catch (error) {  
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      console.error("Error fetching recipes:", error);
+      toast.error("Failed to fetch recipes.", { description: errorMessage });
+      if (suggestedRecipesList.length === 0 || fetchNew) setSuggestedRecipesList([]);
     } finally {
-      setIsFetchingRecipes(false); // Ensure this is always called
+      setIsFetchingRecipes(false);
     }
   };
 
