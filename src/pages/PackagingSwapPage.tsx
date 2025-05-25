@@ -309,7 +309,6 @@ const PackagingSwapPage = () => {
   const handleSubmitLog = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Clear previous errors
     setFormErrors([]);
     const errors: string[] = [];
 
