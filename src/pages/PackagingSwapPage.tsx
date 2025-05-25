@@ -27,11 +27,15 @@ const YOUR_APP_NAME = "Forkprint";
 
 // Debug function to check environment variables (for troubleshooting)
 const debugEnvironmentVariables = () => {
-  console.log('Environment Variables Check:');
+  console.log('=== Environment Variables Debug ===');
   console.log('OPENROUTER_API_KEY present:', !!OPENROUTER_API_KEY);
   console.log('OPENROUTER_API_KEY length:', OPENROUTER_API_KEY?.length || 0);
+  console.log('OPENROUTER_API_KEY starts with:', OPENROUTER_API_KEY?.substring(0, 10) || 'undefined');
+  console.log('SPOONACULAR_API_KEY present:', !!SPOONACULAR_API_KEY);
   console.log('Environment:', process.env.NODE_ENV);
   console.log('Current origin:', window.location.origin);
+  console.log('All VITE_ env vars:', Object.keys(import.meta.env).filter(key => key.startsWith('VITE_')));
+  console.log('===================================');
 };
 
 // Define Packaging Types
@@ -1041,6 +1045,14 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
     `.trim();
 
     try {
+      // Debug API call
+      console.log('=== API Call Debug ===');
+      console.log('API URL:', OPENROUTER_API_URL);
+      console.log('API Key available:', !!OPENROUTER_API_KEY);
+      console.log('API Key length:', OPENROUTER_API_KEY?.length);
+      console.log('Site URL:', YOUR_SITE_URL);
+      console.log('App Name:', YOUR_APP_NAME);
+      
       const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
