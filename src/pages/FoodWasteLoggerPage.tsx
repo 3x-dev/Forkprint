@@ -128,6 +128,7 @@ const FoodWasteLoggerPage: React.FC = () => {
   // Data states
   const [foodServings, setFoodServings] = useState<FoodWasteLogEntry[]>([]);
   const [wasteSummaryData, setWasteSummaryData] = useState<WasteSummary[]>([]);
+  const [chartTimeRange, setChartTimeRange] = useState<'week' | 'month' | '3months' | 'year'>('month');
   
   // Fetch food servings from Supabase
   const fetchFoodServings = async () => {
@@ -190,7 +191,10 @@ const FoodWasteLoggerPage: React.FC = () => {
     const dailyData: Record<string, { totalConsumed: number, totalItems: number, totalWastedItems: number }> = {};
     
     entries.forEach(entry => {
-      const date = new Date(entry.serving.served_at).toISOString().split('T')[0];
+      // Fix timezone issue by adding one day to get accurate local dates
+      const servingDate = new Date(entry.serving.served_at);
+      servingDate.setDate(servingDate.getDate() + 1);
+      const date = servingDate.toISOString().split('T')[0];
       
       if (!dailyData[date]) {
         dailyData[date] = { totalConsumed: 0, totalItems: 0, totalWastedItems: 0 };
@@ -247,6 +251,35 @@ const FoodWasteLoggerPage: React.FC = () => {
     const totalWaste = recentData.reduce((sum, s) => sum + s.percentage_wasted, 0);
     return totalWaste / recentData.length;
   };
+
+  // Helper function to filter data by time range
+  const filterDataByTimeRange = (data: WasteSummary[], timeRange: 'week' | 'month' | '3months' | 'year') => {
+    const now = new Date();
+    let cutoffDate: Date;
+    
+    switch (timeRange) {
+      case 'week':
+        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'month':
+        cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '3months':
+        cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case 'year':
+        cutoffDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+    }
+    
+    const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+    return data.filter(item => item.date >= cutoffDateStr);
+  };
+
+  // Memoized filtered data
+  const filteredChartData = React.useMemo(() => {
+    return filterDataByTimeRange(wasteSummaryData, chartTimeRange);
+  }, [wasteSummaryData, chartTimeRange]);
 
   // Generate encouragement message based on waste percentage and trends
   const generateInsightsAndTips = (currentSummaryData: WasteSummary[]) => {
@@ -789,9 +822,25 @@ const FoodWasteLoggerPage: React.FC = () => {
               <BarChart className="h-5 w-5" />
               Waste Trends
             </CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="waste-time-range" className="text-sm font-medium">
+                Time Range:
+              </Label>
+              <Select value={chartTimeRange} onValueChange={(value: 'week' | 'month' | '3months' | 'year') => setChartTimeRange(value)}>
+                <SelectTrigger id="waste-time-range" className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">Past Week</SelectItem>
+                  <SelectItem value="month">Past Month</SelectItem>
+                  <SelectItem value="3months">Past 3 Months</SelectItem>
+                  <SelectItem value="year">Past Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
-            {wasteSummaryData.length > 0 ? (
+            {filteredChartData.length > 0 ? (
               <>
                 <div className="text-sm text-muted-foreground mb-2 space-y-1">
                   {generateInsightsAndTips(wasteSummaryData).map((insight, idx) => (
@@ -806,13 +855,21 @@ const FoodWasteLoggerPage: React.FC = () => {
                 </div>
                 <div className="h-[300px] mt-4">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={wasteSummaryData}>
+                    <LineChart data={filteredChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis
                         dataKey="date"
-                        tickFormatter={(date) =>
-                          new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-                        }
+                        tickFormatter={(date) => {
+                          const d = new Date(date);
+                          if (chartTimeRange === 'week') {
+                            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' });
+                          } else if (chartTimeRange === 'month') {
+                            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                          } else {
+                            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+                          }
+                        }}
+                        interval="preserveStartEnd"
                       />
                       <YAxis domain={[0, 100]} label={{ value: '% Consumed', angle: -90, position: 'insideLeft' }} />
                       <Tooltip
@@ -822,7 +879,12 @@ const FoodWasteLoggerPage: React.FC = () => {
                           }
                           return [String(value), 'Food Consumed'];
                         }}
-                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                        labelFormatter={(date) => new Date(date).toLocaleDateString(undefined, { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
                       />
                       <Legend />
                       <Line
@@ -838,8 +900,15 @@ const FoodWasteLoggerPage: React.FC = () => {
               </>
             ) : (
               <div className="flex flex-col items-center justify-center h-[300px] text-center">
-                <p className="text-lg font-medium mb-2">No waste data yet</p>
-                <p className="text-muted-foreground">Log your meals and waste to see your trends over time</p>
+                <p className="text-lg font-medium mb-2">
+                  {wasteSummaryData.length > 0 ? 'No data for selected range' : 'No waste data yet'}
+                </p>
+                <p className="text-muted-foreground">
+                  {wasteSummaryData.length > 0 
+                    ? `No data available for the selected time range (${chartTimeRange}). Try expanding your time range.`
+                    : 'Log your meals and waste to see your trends over time'
+                  }
+                </p>
               </div>
             )}
           </CardContent>
