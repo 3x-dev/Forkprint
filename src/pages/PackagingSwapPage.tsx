@@ -1053,7 +1053,7 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
       console.log('Site URL:', YOUR_SITE_URL);
       console.log('App Name:', YOUR_APP_NAME);
       
-      const response = await fetch(OPENROUTER_API_URL, {
+      const response = await fetch(OPENROUTER_API_URL, { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1062,7 +1062,7 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
           'X-Title': YOUR_APP_NAME,
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3.5-sonnet',
+          model: 'deepseek/deepseek-chat',
           messages: [
             { role: 'system', content: 'You are a helpful sustainability expert assistant.' },
             { role: 'user', content: prompt }
@@ -1179,7 +1179,7 @@ Focus on:
     `.trim();
 
     try {
-      const response = await fetch(OPENROUTER_API_URL, {
+      const response = await fetch(OPENROUTER_API_URL, { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1188,7 +1188,7 @@ Focus on:
           'X-Title': YOUR_APP_NAME,
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3.5-sonnet',
+          model: 'deepseek/deepseek-chat',
           messages: [
             { role: 'system', content: 'You are a helpful sustainability coach assistant.' },
             { role: 'user', content: prompt }
