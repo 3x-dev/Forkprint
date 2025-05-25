@@ -13,7 +13,3 @@ A sustainable food waste reduction app with packaging tracking and AI-powered re
 - Food waste tracking and management
 - Sustainable packaging swapper with AI insights
 - Smart recommendations for reducing waste
-
-## Environment Variables Required
-- `VITE_SPOONACULAR_API_KEY` - For food image fetching
-- `VITE_OPENROUTER_API_KEY` - For AI-powered sustainability insights
