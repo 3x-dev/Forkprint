@@ -7,13 +7,23 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { ArrowLeft, Package, TrendingUp, BarChart3, PlusCircle, Edit, Trash2, Lightbulb, CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Package, TrendingUp, BarChart3, PlusCircle, Edit, Trash2, Lightbulb, CalendarIcon, ImageOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
+
+// Spoonacular API configuration
+const SPOONACULAR_API_KEY = import.meta.env.VITE_SPOONACULAR_API_KEY;
+const SPOONACULAR_IMAGE_BASE_URL = "https://spoonacular.com/cdn/ingredients_100x100/";
+
+// OpenRouter API configuration
+const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const YOUR_SITE_URL = window.location.origin;
+const YOUR_APP_NAME = "Forkprint";
 
 // Define Packaging Types
 // TODO: Refine these categories and their low-waste status based on further research or specific app goals.
@@ -49,6 +59,7 @@ interface PackagingLog {
   previous_item_description?: string;
   photo_url_old_item?: string;
   previous_packaging_type?: string;
+  image_url?: string | null;
 }
 
 // --- START ADDITION: Interface for Packaging Swap Summary ---
@@ -61,6 +72,68 @@ interface PackagingSwapSummary {
   // Potentially add counts for specific packaging types swapped from/to if needed for detailed charts
 }
 // --- END ADDITION ---
+
+// Interface for AI-generated packaging alternatives
+interface PackagingAlternative {
+  id: string;
+  foodItem: string;
+  currentPackaging: string;
+  suggestedAlternative: string;
+  reasoning: string;
+  impactReduction: string;
+  whereToFind: string;
+  difficultyLevel: 'Easy' | 'Medium' | 'Hard';
+}
+
+// Interface for AI-generated sustainability insights
+interface SustainabilityInsight {
+  id: string;
+  type: 'environmental_impact' | 'improvement_suggestion' | 'achievement' | 'challenge';
+  title: string;
+  description: string;
+  actionItems?: string[];
+}
+
+// Helper function to fetch food image from Spoonacular API
+const fetchFoodImageFromName = async (name: string): Promise<string | null> => {
+  if (!SPOONACULAR_API_KEY) {
+    console.warn("Spoonacular API key not set");
+    return null;
+  }
+  
+  // Basic normalization: trim and take first few words if very long
+  const searchTerm = name.trim().toLowerCase();
+  const query = encodeURIComponent(searchTerm.split(' ').slice(0, 3).join(' ')); // Use first 3 words for search
+  
+  try {
+    console.log(`Fetching image for: "${searchTerm}" (query: "${query}")`);
+    const response = await fetch(
+      `https://api.spoonacular.com/food/ingredients/search?query=${query}&number=1&apiKey=${SPOONACULAR_API_KEY}`
+    );
+    
+    if (!response.ok) {
+      console.error("Spoonacular API error:", response.status, response.statusText);
+      const errorText = await response.text();
+      console.error("Error details:", errorText);
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log("Spoonacular API response:", data);
+    
+    if (data.results && data.results.length > 0 && data.results[0].image) {
+      const imageUrl = SPOONACULAR_IMAGE_BASE_URL + data.results[0].image;
+      console.log("Generated image URL:", imageUrl);
+      return imageUrl;
+    } else {
+      console.log("No image found in API response for:", searchTerm);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching image from Spoonacular:", error);
+    return null;
+  }
+};
 
 const PackagingSwapPage = () => {
   const { user } = useAuthContext();
@@ -89,6 +162,17 @@ const PackagingSwapPage = () => {
   const [chartTimeRange, setChartTimeRange] = useState<'week' | 'month' | '3months' | 'year'>('month');
   // --- END ADDITION ---
 
+  // State for day-based filtering in logged items
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+
+  // AI-related state variables
+  const [packagingAlternatives, setPackagingAlternatives] = useState<PackagingAlternative[]>([]);
+  const [sustainabilityInsights, setSustainabilityInsights] = useState<SustainabilityInsight[]>([]);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [isGeneratingAlternatives, setIsGeneratingAlternatives] = useState(false);
+  const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
+  const [selectedHighWasteItems, setSelectedHighWasteItems] = useState<PackagingLog[]>([]);
+
   // Calculate scoreboard stats
   const scoreboardStats = React.useMemo(() => {
     const totalItems = userLogs.length;
@@ -102,6 +186,22 @@ const PackagingSwapPage = () => {
   useEffect(() => {
     fetchUserLogs();
   }, [user]);
+
+  // Check for Spoonacular API key on component mount
+  useEffect(() => {
+    if (!SPOONACULAR_API_KEY) {
+      console.warn("Spoonacular API key is not set. Image fetching will be disabled.");
+      toast.warning("Image fetching disabled: Spoonacular API key missing.", {
+        description: "Please set VITE_SPOONACULAR_API_KEY in your .env file."
+      });
+    }
+    if (!OPENROUTER_API_KEY) {
+      console.warn("OpenRouter API key is not set. AI features will be disabled.");
+      toast.warning("AI features disabled: OpenRouter API key missing.", {
+        description: "Please set VITE_OPENROUTER_API_KEY in your .env file."
+      });
+    }
+  }, []);
 
   // --- START ADDITION: useEffect to generate summary data when userLogs change ---
   useEffect(() => {
@@ -142,8 +242,12 @@ const PackagingSwapPage = () => {
     }> = {};
 
     logs.forEach(log => {
-      // Use the original date without timezone correction
-      const logDate = new Date(log.created_at);
+      // Extract date directly from the stored string to avoid timezone conversion
+      const rawDate = log.created_at.split('T')[0]; // Get YYYY-MM-DD directly
+      
+      // Hard code fix: Add one day to correct the graph display
+      const logDate = new Date(rawDate + 'T00:00:00');
+      logDate.setDate(logDate.getDate() + 1);
       const date = logDate.toISOString().split('T')[0];
       
       if (!dailyData[date]) {
@@ -233,13 +337,18 @@ const PackagingSwapPage = () => {
 
     setIsLoading(true);
     try {
-      // Use selectedPurchaseDate for the date part, and current time for the time part
-      const purchaseDate = new Date(selectedPurchaseDate);
+      // Fix timezone issue: Create proper date string that preserves the selected date
       const now = new Date();
-      purchaseDate.setHours(now.getHours());
-      purchaseDate.setMinutes(now.getMinutes());
-      purchaseDate.setSeconds(now.getSeconds());
-      purchaseDate.setMilliseconds(now.getMilliseconds());
+      const year = selectedPurchaseDate.getFullYear();
+      const month = (selectedPurchaseDate.getMonth() + 1).toString().padStart(2, '0');
+      const day = selectedPurchaseDate.getDate().toString().padStart(2, '0');
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const seconds = now.getSeconds().toString().padStart(2, '0');
+      const millis = now.getMilliseconds().toString().padStart(3, '0');
+      
+      // Create ISO string that preserves the selected date regardless of timezone
+      const purchaseDateStr = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${millis}Z`;
 
       // Use `as any` for insert operation as well
       const { data, error } = await (supabase.from('packaging_logs') as any)
@@ -250,7 +359,7 @@ const PackagingSwapPage = () => {
           is_low_waste: packagingDetail.isLowWaste,
           quantity: currentQuantity,
           notes: notes || null,
-          created_at: purchaseDate.toISOString(),
+          created_at: purchaseDateStr,
         }])
         .select(); // Ensure .select() is called to get the inserted data back
 
@@ -259,8 +368,48 @@ const PackagingSwapPage = () => {
       if (data && data.length > 0) {
         const newLog = data[0] as PackagingLog;
         
+        // Fetch and save food image
+        let addedItemData = newLog;
+        const imageUrl = await fetchFoodImageFromName(foodItemName);
+        console.log(`Image URL fetch result for "${foodItemName}":`, imageUrl);
+        
+        if (imageUrl && newLog.id) {
+          try {
+            const { data: updatedData, error: updateError } = await (supabase.from('packaging_logs') as any)
+              .update({ image_url: imageUrl })
+              .eq('id', newLog.id)
+              .select()
+              .single();
+            
+            if (updateError) {
+              console.error("Database update error for image_url:", updateError);
+              // Check if it's a column not found error
+              if (updateError.message && updateError.message.includes('image_url')) {
+                console.warn("The image_url column doesn't exist in the packaging_logs table. Skipping image update.");
+                toast.warning("Image storage not available", { 
+                  description: "Images are being fetched but not stored. Please check database schema." 
+                });
+              } else {
+                toast.error("Failed to save image URL.", { description: updateError.message });
+              }
+            } else if (updatedData) {
+              addedItemData = updatedData as PackagingLog; // Use the fully updated item
+              console.log(`Successfully updated item with image URL:`, addedItemData);
+              toast.info(`Image found for "${addedItemData.food_item_name}"!`);
+            }
+          } catch (dbError) {
+            console.error("Database error when updating image_url:", dbError);
+            toast.warning("Could not save image to database", { 
+              description: "Image was fetched but couldn't be stored." 
+            });
+          }
+        } else {
+          console.log(`No image URL to save for "${foodItemName}". URL: ${imageUrl}, ID: ${newLog.id}`);
+          toast.info(`No image found for "${addedItemData.food_item_name}", or API key missing.`);
+        }
+        
         // Automatically detect switch type based on previous logs
-        const previousLog = getPreviousLogForFoodItem(newLog.food_item_name, newLog.id);
+        const previousLog = getPreviousLogForFoodItem(addedItemData.food_item_name, addedItemData.id, addedItemData.created_at);
         const switchDetection = detectSwitchType(packagingTypeToSave, packagingDetail.isLowWaste, previousLog);
         
         // Update the log with switch information if a switch was detected
@@ -270,22 +419,22 @@ const PackagingSwapPage = () => {
               made_switch: true,
               previous_packaging_type: switchDetection.previousPackagingType,
             })
-            .eq('id', newLog.id)
+            .eq('id', addedItemData.id)
             .eq('user_id', user.id);
           
           if (updateError) {
             console.error('Error updating switch information:', updateError);
           } else {
             // Update local state with switch information
-            newLog.made_switch = true;
-            newLog.previous_packaging_type = switchDetection.previousPackagingType;
+            addedItemData.made_switch = true;
+            addedItemData.previous_packaging_type = switchDetection.previousPackagingType;
           }
         }
         
-        setUserLogs(prevLogs => [newLog, ...prevLogs]);
+        setUserLogs(prevLogs => [addedItemData, ...prevLogs]);
         
         // Show dynamic feedback for new log
-        showDynamicFeedback(newLog, previousLog, switchDetection.switchType);
+        showDynamicFeedback(addedItemData, previousLog, switchDetection.switchType);
       }
       toast.success('Packaging log submitted!');
       setFoodItemName('');
@@ -368,7 +517,7 @@ const PackagingSwapPage = () => {
     try {
       // For edits, we need to calculate switch information based on the relationship 
       // to the previous separate log entry, not the original values of the same entry
-      const previousLogForEditedItem = getPreviousLogForFoodItem(editFoodItemName, editingLogItem.id);
+      const previousLogForEditedItem = getPreviousLogForFoodItem(editFoodItemName, editingLogItem.id, editingLogItem.created_at);
       const editSwitchDetection = detectSwitchType(packagingTypeToSave, packagingDetail.isLowWaste, previousLogForEditedItem);
 
       const updatedLogData: Partial<PackagingLog> = {
@@ -462,11 +611,21 @@ const PackagingSwapPage = () => {
   // --- END ADDITION ---
 
   // Helper function to find the most recent previous log for a given food item
-  const getPreviousLogForFoodItem = (foodName: string, currentLogIdToExclude?: string): PackagingLog | null => {
+  const getPreviousLogForFoodItem = (foodName: string, currentLogIdToExclude?: string, currentLogDate?: string): PackagingLog | null => {
     const relevantLogs = userLogs
       .filter(log => log.food_item_name.toLowerCase() === foodName.toLowerCase() && log.id !== currentLogIdToExclude)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()); // Sort by newest first
-    return relevantLogs.length > 0 ? relevantLogs[0] : null;
+
+    if (!currentLogDate) return relevantLogs.length > 0 ? relevantLogs[0] : null;
+
+    // Extract dates directly from stored strings to avoid timezone conversion
+    const currentDateOnly = currentLogDate.split('T')[0]; // Get YYYY-MM-DD
+    const previousLogs = relevantLogs.filter(log => {
+      const logDateOnly = log.created_at.split('T')[0]; // Get YYYY-MM-DD
+      return logDateOnly < currentDateOnly;
+    });
+    
+    return previousLogs.length > 0 ? previousLogs[0] : null;
   };
 
   // Helper function to automatically detect switch type
@@ -787,6 +946,290 @@ const PackagingSwapPage = () => {
     return filterDataByTimeRange(packagingSummaryData, chartTimeRange);
   }, [packagingSummaryData, chartTimeRange]);
 
+  // Helper function to group items by day
+  const groupItemsByDay = React.useMemo(() => {
+    const groups: Record<string, PackagingLog[]> = {};
+    
+    userLogs.forEach(log => {
+      const dateKey = log.created_at.split('T')[0]; // Extract YYYY-MM-DD directly
+      
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(log);
+    });
+
+    // Convert to array and sort by date (newest first)
+    return Object.entries(groups)
+      .map(([date, items]) => ({
+        date,
+        displayDate: new Date(date + 'T00:00:00').toLocaleDateString(undefined, { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }),
+        items: items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) // Sort items within day by time
+      }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort days newest first
+  }, [userLogs]);
+
+  // Toggle collapsed state for a specific day
+  const toggleDayCollapsed = (dateKey: string) => {
+    setCollapsedDays(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(dateKey)) {
+        newSet.delete(dateKey);
+      } else {
+        newSet.add(dateKey);
+      }
+      return newSet;
+    });
+  };
+
+  // AI-powered packaging alternatives generator
+  const generatePackagingAlternatives = async (highWasteItems: PackagingLog[]) => {
+    if (!OPENROUTER_API_KEY) {
+      toast.error("AI features disabled: OpenRouter API key missing.");
+      return;
+    }
+
+    if (highWasteItems.length === 0) {
+      toast.info("No high-waste items found to suggest alternatives for.");
+      return;
+    }
+
+    setIsGeneratingAlternatives(true);
+    
+    const itemsDescription = highWasteItems.map(item => 
+      `${item.food_item_name} (currently packaged in: ${packagingTypes.find(p => p.id === item.packaging_type)?.label || item.packaging_type})`
+    ).join(', ');
+
+    const prompt = `
+You are a sustainability expert helping users reduce packaging waste. Given these food items with high-waste packaging:
+
+${itemsDescription}
+
+For each item, suggest better packaging alternatives following this JSON format:
+{
+  "alternatives": [
+    {
+      "foodItem": "Item name",
+      "currentPackaging": "Current packaging type",
+      "suggestedAlternative": "Better packaging option",
+      "reasoning": "Why this alternative is better (brief)",
+      "impactReduction": "Environmental benefit (e.g., '70% less plastic waste')",
+      "whereToFind": "Where to find this alternative (specific stores/brands if possible)",
+      "difficultyLevel": "Easy/Medium/Hard"
+    }
+  ]
+}
+
+Focus on practical, realistic alternatives available in most areas. Consider bulk stores, farmer's markets, specific brands, or different store sections.
+    `.trim();
+
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'HTTP-Referer': YOUR_SITE_URL,
+          'X-Title': YOUR_APP_NAME,
+        },
+        body: JSON.stringify({
+          model: 'anthropic/claude-3.5-sonnet',
+          messages: [
+            { role: 'system', content: 'You are a helpful sustainability expert assistant.' },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: 2000,
+          temperature: 0.7,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("OpenRouter API Error:", errorData);
+        let errorMessage = `API request failed with status ${response.status}`;
+        if (errorData && errorData.error && errorData.error.message) {
+          errorMessage = errorData.error.message;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      
+      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+        const content = data.choices[0].message.content;
+        
+        if (content) {
+          try {
+            const parsedContent = JSON.parse(content);
+            if (parsedContent.alternatives && Array.isArray(parsedContent.alternatives)) {
+              const alternatives: PackagingAlternative[] = parsedContent.alternatives.map((alt: any, index: number) => ({
+                id: `alt-${Date.now()}-${index}`,
+                ...alt
+              }));
+              
+              setPackagingAlternatives(alternatives);
+              toast.success(`Generated ${alternatives.length} packaging alternative${alternatives.length !== 1 ? 's' : ''}!`);
+            } else {
+              throw new Error('Invalid response format: missing alternatives array');
+            }
+          } catch (parseError) {
+            console.error('Error parsing AI response:', parseError);
+            console.error('Raw response content:', content);
+            toast.error('Failed to parse AI response. Please try again.');
+          }
+        } else {
+          toast.info("AI couldn't generate alternatives this time. Try again later.");
+        }
+      } else {
+        toast.info("AI couldn't generate alternatives this time. Try again later.");
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      console.error('Error generating alternatives:', error);
+      toast.error('Failed to generate packaging alternatives.', { description: errorMessage });
+    } finally {
+      setIsGeneratingAlternatives(false);
+    }
+  };
+
+  // AI-powered sustainability insights generator  
+  const generateSustainabilityInsights = async () => {
+    if (!OPENROUTER_API_KEY) {
+      toast.error("AI features disabled: OpenRouter API key missing.");
+      return;
+    }
+
+    setIsGeneratingInsights(true);
+
+    const recentLogs = userLogs.slice(0, 20); // Use last 20 items for analysis
+    
+    // Add validation for empty logs
+    if (recentLogs.length === 0) {
+      toast.info("No packaging logs found to analyze. Add some purchases first!");
+      setIsGeneratingInsights(false);
+      return;
+    }
+
+    const stats = {
+      totalItems: recentLogs.length,
+      lowWasteItems: recentLogs.filter(log => log.is_low_waste).length,
+      sustainableSwitches: recentLogs.filter(log => log.made_switch && log.is_low_waste).length,
+      commonHighWastePackaging: [...new Set(recentLogs.filter(log => !log.is_low_waste).map(log => log.packaging_type))],
+      mostLoggedFoods: recentLogs.reduce((acc, log) => {
+        acc[log.food_item_name] = (acc[log.food_item_name] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
+    };
+
+    const prompt = `
+You are a sustainability coach analyzing packaging choices. Based on these user stats:
+
+- Total recent purchases: ${stats.totalItems}
+- Low-waste choices: ${stats.lowWasteItems}/${stats.totalItems} (${stats.totalItems > 0 ? Math.round((stats.lowWasteItems/stats.totalItems) * 100) : 0}%)
+- Sustainable switches made: ${stats.sustainableSwitches}
+- Common high-waste packaging: ${stats.commonHighWastePackaging.join(', ') || 'None'}
+- Frequently bought items: ${Object.entries(stats.mostLoggedFoods).slice(0, 5).map(([food, count]) => `${food} (${count}x)`).join(', ') || 'None'}
+
+Generate 3-4 personalized sustainability insights following this JSON format:
+{
+  "insights": [
+    {
+      "type": "environmental_impact/improvement_suggestion/achievement/challenge",
+      "title": "Insight title",
+      "description": "Detailed description with specific data",
+      "actionItems": ["Specific action 1", "Specific action 2"]
+    }
+  ]
+}
+
+Focus on:
+1. Environmental impact calculations
+2. Specific improvement suggestions  
+3. Celebrating achievements
+4. Personalized challenges
+    `.trim();
+
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'HTTP-Referer': YOUR_SITE_URL,
+          'X-Title': YOUR_APP_NAME,
+        },
+        body: JSON.stringify({
+          model: 'anthropic/claude-3.5-sonnet',
+          messages: [
+            { role: 'system', content: 'You are a helpful sustainability coach assistant.' },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: 2000,
+          temperature: 0.7,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("OpenRouter API Error:", errorData);
+        let errorMessage = `API request failed with status ${response.status}`;
+        if (errorData && errorData.error && errorData.error.message) {
+          errorMessage = errorData.error.message;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      
+      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+        const content = data.choices[0].message.content;
+        
+        if (content) {
+          try {
+            const parsedContent = JSON.parse(content);
+            if (parsedContent.insights && Array.isArray(parsedContent.insights)) {
+              const insights: SustainabilityInsight[] = parsedContent.insights.map((insight: any, index: number) => ({
+                id: `insight-${Date.now()}-${index}`,
+                ...insight
+              }));
+              
+              setSustainabilityInsights(insights);
+              toast.success(`Generated ${insights.length} sustainability insight${insights.length !== 1 ? 's' : ''}!`);
+            } else {
+              throw new Error('Invalid response format: missing insights array');
+            }
+          } catch (parseError) {
+            console.error('Error parsing AI response:', parseError);
+            console.error('Raw response content:', content);
+            toast.error('Failed to parse AI response. Please try again.');
+          }
+        } else {
+          toast.info("AI couldn't generate insights this time. Try again later.");
+        }
+      } else {
+        toast.info("AI couldn't generate insights this time. Try again later.");
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      console.error('Error generating insights:', error);
+      toast.error('Failed to generate sustainability insights.', { description: errorMessage });
+    } finally {
+      setIsGeneratingInsights(false);
+    }
+  };
+
+  // Open AI modal with alternatives for high-waste items
+  const handleOpenAIModal = () => {
+    const highWasteItems = userLogs.filter(log => !log.is_low_waste).slice(0, 10); // Last 10 high-waste items
+    setSelectedHighWasteItems(highWasteItems);
+    setIsAIModalOpen(true);
+  };
+
   return (
     <div className="container mx-auto p-4 md:p-8">
       <div className="flex items-center justify-between mb-6">
@@ -987,10 +1430,24 @@ const PackagingSwapPage = () => {
           {/* Insights and Tips Section */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Lightbulb className="h-5 w-5 text-yellow-600" />
-                Your Insights & Tips
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Lightbulb className="h-5 w-5 text-yellow-600" />
+                  Your Insights & Tips
+                </CardTitle>
+                {OPENROUTER_API_KEY && userLogs.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleOpenAIModal}
+                    disabled={isGeneratingAlternatives || isGeneratingInsights}
+                    className="flex items-center gap-2"
+                  >
+                    <Lightbulb className="h-4 w-4" />
+                    {isGeneratingAlternatives || isGeneratingInsights ? 'Generating AI Insights...' : 'Get AI Insights'}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -1197,68 +1654,137 @@ const PackagingSwapPage = () => {
         {isLoading && userLogs.length === 0 && <p>Loading your logs...</p>}
         {!isLoading && userLogs.length === 0 && <p>You haven't logged any items yet. Start by adding a purchase above!</p>}
         
-        {userLogs.length > 0 && (
+        {groupItemsByDay.length > 0 && (
           <div className="space-y-4">
-            {userLogs.map((log) => {
-              // --- START MODIFICATION: Use helper for switch message ---
-              const switchInfo = getSwitchNotificationMessage(log);
-              // --- END MODIFICATION ---
+            {groupItemsByDay.map(({ date, displayDate, items }) => {
+              const isCollapsed = collapsedDays.has(date);
+              const dayStats = {
+                total: items.length,
+                lowWaste: items.filter(item => item.is_low_waste).length,
+                highWaste: items.filter(item => !item.is_low_waste).length,
+                switches: items.filter(item => item.made_switch).length
+              };
+              
               return (
-                <Card key={log.id} className={log.is_low_waste ? 'border-green-500' : 'border-red-500'}>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{log.food_item_name}</CardTitle>
-                    <CardDescription>
-                      Logged on: {(() => {
-                        const logDate = new Date(log.created_at);
-                        return logDate.toLocaleDateString(undefined, { 
-                          year: 'numeric', 
-                          month: 'long', 
-                          day: 'numeric' 
-                        });
-                      })()}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p>Packaging: {packagingTypes.find(p => p.id === log.packaging_type)?.label || log.packaging_type}</p>
-                    <p>Quantity: {log.quantity}</p>
-                    <p>Low Waste: <span className={log.is_low_waste ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>{log.is_low_waste ? 'Yes' : 'No'}</span></p>
-                    {log.notes && <p>Notes: {log.notes}</p>}
-                    
-                    {/* --- START MODIFICATION: Display detailed switch message --- */}
-                    {switchInfo.type !== 'none' && (
-                      <p 
-                        className={`text-sm mt-1 ${
-                          switchInfo.type === 'positive' ? 'text-green-700' :
-                          switchInfo.type === 'negative' ? 'text-red-700' :
-                          'text-blue-700' // neutral
-                        }`}
-                      >
-                        {switchInfo.message}
-                      </p>
-                    )}
-                    {/* --- END MODIFICATION --- */}
-
-                    <div className="flex gap-2 mt-3">
-                      <Button 
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenEditModal(log)}
-                        className="flex items-center gap-1"
-                      >
-                        <Edit className="h-3 w-3" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeleteLog(log.id, log.food_item_name)}
-                        className="flex items-center gap-1"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        Delete
-                      </Button>
+                <Card key={date} className="border-l-4 border-l-blue-500">
+                  <CardHeader 
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => toggleDayCollapsed(date)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          {isCollapsed ? (
+                            <ChevronDown className="h-5 w-5 text-gray-500" />
+                          ) : (
+                            <ChevronUp className="h-5 w-5 text-gray-500" />
+                          )}
+                          <CardTitle className="text-lg">{displayDate}</CardTitle>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm">
+                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                          {dayStats.total} item{dayStats.total !== 1 ? 's' : ''}
+                        </span>
+                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                          {dayStats.lowWaste} low-waste
+                        </span>
+                        {dayStats.switches > 0 && (
+                          <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full">
+                            {dayStats.switches} switch{dayStats.switches !== 1 ? 'es' : ''}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </CardContent>
+                  </CardHeader>
+                  
+                  {!isCollapsed && (
+                    <CardContent>
+                      <div className="space-y-3">
+                        {items.map((log) => {
+                          const switchInfo = getSwitchNotificationMessage(log);
+                          
+                          return (
+                            <div 
+                              key={log.id} 
+                              className={`p-4 rounded-lg border-2 ${log.is_low_waste ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                {/* Food Image */}
+                                <div className="flex-shrink-0">
+                                  {log.image_url ? (
+                                    <img 
+                                      src={log.image_url} 
+                                      alt={log.food_item_name} 
+                                      className="h-12 w-12 rounded-lg object-cover border"
+                                    />
+                                  ) : (
+                                    <div className="h-12 w-12 rounded-lg border border-gray-200 bg-gray-100 flex items-center justify-center">
+                                      <ImageOff className="h-6 w-6 text-gray-400" />
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {/* Item Details */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <h4 className="font-semibold text-gray-900">{log.food_item_name}</h4>
+                                      <p className="text-sm text-gray-600 mt-1">
+                                        Packaging: {packagingTypes.find(p => p.id === log.packaging_type)?.label || log.packaging_type}
+                                      </p>
+                                      <p className="text-sm text-gray-600">
+                                        Quantity: {log.quantity} | 
+                                        <span className={`ml-1 font-medium ${log.is_low_waste ? 'text-green-600' : 'text-red-600'}`}>
+                                          {log.is_low_waste ? 'Low Waste' : 'High Waste'}
+                                        </span>
+                                      </p>
+                                      {log.notes && (
+                                        <p className="text-sm text-gray-500 mt-1">
+                                          Notes: {log.notes}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button 
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleOpenEditModal(log)}
+                                        className="flex items-center gap-1 h-8"
+                                      >
+                                        <Edit className="h-3 w-3" />
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() => handleDeleteLog(log.id, log.food_item_name)}
+                                        className="flex items-center gap-1 h-8"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                        Delete
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Switch Information */}
+                                  {switchInfo.type !== 'none' && (
+                                    <div className={`mt-2 p-2 rounded text-sm ${
+                                      switchInfo.type === 'positive' ? 'bg-green-100 text-green-700 border border-green-200' :
+                                      switchInfo.type === 'negative' ? 'bg-red-100 text-red-700 border border-red-200' :
+                                      'bg-blue-100 text-blue-700 border border-blue-200'
+                                    }`}>
+                                      {switchInfo.message}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  )}
                 </Card>
               );
             })}
@@ -1362,6 +1888,148 @@ const PackagingSwapPage = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* AI Insights Modal */}
+      <Dialog open={isAIModalOpen} onOpenChange={setIsAIModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-yellow-600" />
+              AI-Powered Sustainability Insights
+            </DialogTitle>
+            <DialogDescription>
+              Get personalized packaging alternatives and sustainability insights based on your shopping patterns.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            {/* Packaging Alternatives Section */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Smart Packaging Alternatives</h3>
+                <Button
+                  onClick={() => generatePackagingAlternatives(selectedHighWasteItems)}
+                  disabled={isGeneratingAlternatives || selectedHighWasteItems.length === 0}
+                  size="sm"
+                >
+                  {isGeneratingAlternatives ? 'Generating...' : 'Generate Alternatives'}
+                </Button>
+              </div>
+              
+              {selectedHighWasteItems.length === 0 ? (
+                <p className="text-gray-500 text-sm">No high-waste items found to suggest alternatives for.</p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Found {selectedHighWasteItems.length} high-waste item{selectedHighWasteItems.length !== 1 ? 's' : ''} to suggest alternatives for.
+                  </p>
+                  
+                  {packagingAlternatives.length > 0 && (
+                    <div className="space-y-3">
+                      {packagingAlternatives.map((alternative) => (
+                        <Card key={alternative.id} className="border-l-4 border-l-green-500">
+                          <CardContent className="pt-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <h4 className="font-semibold text-gray-900">{alternative.foodItem}</h4>
+                                <p className="text-sm text-gray-600 mt-1">
+                                  <span className="font-medium">Current:</span> {alternative.currentPackaging}
+                                </p>
+                                <p className="text-sm text-green-600 mt-1">
+                                  <span className="font-medium">Better Alternative:</span> {alternative.suggestedAlternative}
+                                </p>
+                                <div className={`inline-block px-2 py-1 rounded text-xs font-medium mt-2 ${
+                                  alternative.difficultyLevel === 'Easy' ? 'bg-green-100 text-green-800' :
+                                  alternative.difficultyLevel === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-red-100 text-red-800'
+                                }`}>
+                                  {alternative.difficultyLevel} to find
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-sm text-gray-700 mb-2">
+                                  <span className="font-medium">Why better:</span> {alternative.reasoning}
+                                </p>
+                                <p className="text-sm text-blue-600 mb-2">
+                                  <span className="font-medium">Impact:</span> {alternative.impactReduction}
+                                </p>
+                                <p className="text-sm text-purple-600">
+                                  <span className="font-medium">Where to find:</span> {alternative.whereToFind}
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            
+            {/* Sustainability Insights Section */}
+            <div className="border-t pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Personalized Sustainability Insights</h3>
+                <Button
+                  onClick={generateSustainabilityInsights}
+                  disabled={isGeneratingInsights || userLogs.length === 0}
+                  size="sm"
+                >
+                  {isGeneratingInsights ? 'Generating...' : 'Generate Insights'}
+                </Button>
+              </div>
+              
+              {userLogs.length === 0 ? (
+                <p className="text-gray-500 text-sm">Log some purchases to get personalized sustainability insights.</p>
+              ) : (
+                <>
+                  {sustainabilityInsights.length > 0 && (
+                    <div className="space-y-3">
+                      {sustainabilityInsights.map((insight) => {
+                        const bgColor = 
+                          insight.type === 'achievement' ? 'bg-green-50 border-green-200' :
+                          insight.type === 'challenge' ? 'bg-blue-50 border-blue-200' :
+                          insight.type === 'improvement_suggestion' ? 'bg-yellow-50 border-yellow-200' :
+                          'bg-purple-50 border-purple-200';
+                        
+                        const textColor = 
+                          insight.type === 'achievement' ? 'text-green-800' :
+                          insight.type === 'challenge' ? 'text-blue-800' :
+                          insight.type === 'improvement_suggestion' ? 'text-yellow-800' :
+                          'text-purple-800';
+                        
+                        return (
+                          <Card key={insight.id} className={`border-2 ${bgColor}`}>
+                            <CardContent className="pt-4">
+                              <h4 className={`font-semibold ${textColor} mb-2`}>{insight.title}</h4>
+                              <p className="text-gray-700 text-sm mb-3">{insight.description}</p>
+                              {insight.actionItems && insight.actionItems.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-medium text-gray-600 mb-2">Action Items:</p>
+                                  <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                                    {insight.actionItems.map((action, index) => (
+                                      <li key={index}>{action}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAIModalOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
