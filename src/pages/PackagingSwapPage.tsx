@@ -25,6 +25,15 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const YOUR_SITE_URL = window.location.origin;
 const YOUR_APP_NAME = "Forkprint";
 
+// Debug function to check environment variables (for troubleshooting)
+const debugEnvironmentVariables = () => {
+  console.log('Environment Variables Check:');
+  console.log('OPENROUTER_API_KEY present:', !!OPENROUTER_API_KEY);
+  console.log('OPENROUTER_API_KEY length:', OPENROUTER_API_KEY?.length || 0);
+  console.log('Environment:', process.env.NODE_ENV);
+  console.log('Current origin:', window.location.origin);
+};
+
 // Define Packaging Types
 // TODO: Refine these categories and their low-waste status based on further research or specific app goals.
 const packagingTypes = [
@@ -189,6 +198,9 @@ const PackagingSwapPage = () => {
 
   // Check for Spoonacular API key on component mount
   useEffect(() => {
+    // Debug environment variables (helpful for troubleshooting deployment)
+    debugEnvironmentVariables();
+    
     if (!SPOONACULAR_API_KEY) {
       console.warn("Spoonacular API key is not set. Image fetching will be disabled.");
       toast.warning("Image fetching disabled: Spoonacular API key missing.", {
