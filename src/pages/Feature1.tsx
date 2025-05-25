@@ -23,6 +23,7 @@ interface FoodItem {
   user_id?: string; // Will be set but not always needed in UI
   name: string;
   expiry_date: string; // Store as ISO string "YYYY-MM-DD"
+  date_type: 'use_by' | 'best_by' | 'sell_by' | 'freeze_by' | 'expires_on'; // New field
   amount?: string | null; // Match Supabase (TEXT can be null)
   image_url?: string | null; // New field for the image URL
   created_at?: string;
@@ -147,7 +148,8 @@ const MAX_INGREDIENTS_FOR_LLM = 15; // Max ingredients to send to LLM
 const FoodExpiryPage: React.FC = () => {
   const { user } = useAuthContext();
   const [itemName, setItemName] = useState('');
-  const [expiryDate, setExpiryDate] = useState(''); // HTML input type="date" provides "YYYY-MM-DD"
+  const [expiryDate, setExpiryDate] = useState('');
+  const [dateType, setDateType] = useState<'use_by' | 'best_by' | 'sell_by' | 'freeze_by' | 'expires_on'>('best_by'); // New state
   const [amount, setAmount] = useState('');
   const [fridgeItems, setFridgeItems] = useState<FoodItem[]>([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = React.useState<Date | undefined>(new Date());
@@ -159,11 +161,12 @@ const FoodExpiryPage: React.FC = () => {
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
   const [lastFreshFetchTime, setLastFreshFetchTime] = useState<number | null>(null);
   const [initialCacheLoadAttempted, setInitialCacheLoadAttempted] = useState(false);
-  const [expiredItems, setExpiredItems] = useState<FoodItem[]>([]);
+  const [itemsNeedingAttention, setItemsNeedingAttention] = useState<FoodItem[]>([]); // Renamed from expiredItems
   
   // Edit functionality state
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editExpiryDate, setEditExpiryDate] = useState('');
+  const [editDateType, setEditDateType] = useState<'use_by' | 'best_by' | 'sell_by' | 'freeze_by' | 'expires_on'>('best_by'); // New edit state
   const [editAmount, setEditAmount] = useState('');
 
   // Disposal guidance state
@@ -171,6 +174,122 @@ const FoodExpiryPage: React.FC = () => {
   const [selectedDisposalItem, setSelectedDisposalItem] = useState<FoodItem | null>(null);
   const [disposalGuidance, setDisposalGuidance] = useState<string>('');
   const [isFetchingDisposal, setIsFetchingDisposal] = useState(false);
+
+  // Helper function to get date type information
+  const getDateTypeInfo = (dateType: string) => {
+    switch (dateType) {
+      case 'use_by':
+        return {
+          label: 'Use By',
+          description: 'Safety date - do not consume after this date',
+          color: 'red',
+          isStrict: true,
+          icon: '⚠️'
+        };
+      case 'best_by':
+        return {
+          label: 'Best By',
+          description: 'Quality date - safe to consume but quality may decline',
+          color: 'yellow',
+          isStrict: false,
+          icon: '⭐'
+        };
+      case 'sell_by':
+        return {
+          label: 'Sell By',
+          description: 'Store rotation date - still good for several days after',
+          color: 'blue',
+          isStrict: false,
+          icon: '🏪'
+        };
+      case 'freeze_by':
+        return {
+          label: 'Freeze By',
+          description: 'Freeze before this date to maintain quality',
+          color: 'cyan',
+          isStrict: false,
+          icon: '❄️'
+        };
+      case 'expires_on':
+        return {
+          label: 'Expires On',
+          description: 'General expiration - check item condition',
+          color: 'orange',
+          isStrict: true,
+          icon: '📅'
+        };
+      default:
+        return {
+          label: 'Unknown',
+          description: 'Unknown date type',
+          color: 'gray',
+          isStrict: false,
+          icon: '❓'
+        };
+    }
+  };
+
+  // Helper function to determine if item needs attention based on date type
+  const getItemStatus = (item: FoodItem) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const itemDate = new Date(item.expiry_date + 'T00:00:00');
+    const diffTime = itemDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const dateInfo = getDateTypeInfo(item.date_type);
+
+    if (diffDays < 0) {
+      // Past the date
+      if (dateInfo.isStrict) {
+        return {
+          status: 'dispose',
+          urgency: 'critical',
+          message: `${dateInfo.label} date passed - dispose immediately`,
+          daysPast: Math.abs(diffDays)
+        };
+      } else {
+        return {
+          status: 'check',
+          urgency: 'medium',
+          message: `${dateInfo.label} date passed - check quality before use`,
+          daysPast: Math.abs(diffDays)
+        };
+      }
+    } else if (diffDays === 0) {
+      // Today
+      if (dateInfo.isStrict) {
+        return {
+          status: 'use_today',
+          urgency: 'high',
+          message: `${dateInfo.label} date is today - use immediately`,
+          daysPast: 0
+        };
+      } else {
+        return {
+          status: 'check_today',
+          urgency: 'medium',
+          message: `${dateInfo.label} date is today - check quality`,
+          daysPast: 0
+        };
+      }
+    } else if (diffDays <= 3) {
+      // Soon
+      return {
+        status: 'use_soon',
+        urgency: dateInfo.isStrict ? 'high' : 'medium',
+        message: `${dateInfo.label} in ${diffDays} day${diffDays > 1 ? 's' : ''} - ${dateInfo.isStrict ? 'use soon' : 'plan to use'}`,
+        daysPast: 0
+      };
+    } else {
+      // Good for now
+      return {
+        status: 'good',
+        urgency: 'low',
+        message: `${dateInfo.label} in ${diffDays} days`,
+        daysPast: 0
+      };
+    }
+  };
 
   // Fetch food items from Supabase
   const fetchFridgeItems = async () => {
@@ -296,41 +415,44 @@ const FoodExpiryPage: React.FC = () => {
     }
   }, [selectedCalendarDate, fridgeItems]);
   
-  // useEffect to update expiredItems list
+  // Updated useEffect for items needing attention
   useEffect(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const currentlyExpired = fridgeItems.filter(item => {
-      const expiry = new Date(item.expiry_date + 'T00:00:00');
-      return expiry < today;
-    }).sort((a,b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime()); // Show oldest expired first
-    setExpiredItems(currentlyExpired);
+    const itemsNeedingAttention = fridgeItems.filter(item => {
+      const status = getItemStatus(item);
+      return status.status === 'dispose' || status.status === 'use_today' || status.status === 'check';
+    }).sort((a, b) => {
+      const statusA = getItemStatus(a);
+      const statusB = getItemStatus(b);
+      
+      // Sort by urgency first, then by date
+      const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+      if (urgencyOrder[statusA.urgency] !== urgencyOrder[statusB.urgency]) {
+        return urgencyOrder[statusA.urgency] - urgencyOrder[statusB.urgency];
+      }
+      
+      return new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime();
+    });
+    
+    setItemsNeedingAttention(itemsNeedingAttention);
   }, [fridgeItems]);
 
-  // Notification Logic (runs when fridgeItems are loaded/changed)
+  // Updated notification logic
   useEffect(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); 
-
     fridgeItems.forEach(item => {
-      const expiry = new Date(item.expiry_date + 'T00:00:00'); 
-      expiry.setHours(0,0,0,0);
-      
-      const diffTime = expiry.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const status = getItemStatus(item);
+      const dateInfo = getDateTypeInfo(item.date_type);
 
-      if (diffDays < 0) { // Item has expired
-        toast.error(`"${item.name}" has expired!`, {
-          description: `Expired on: ${new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}. Please dispose of it properly.`,
-          // You could add an action here to link to composting/disposal guidelines later
-          // action: {
-          //   label: "Disposal Tips",
-          //   onClick: () => console.log(`Show disposal tips for ${item.name}`),
-          // },
+      if (status.status === 'dispose') {
+        toast.error(`"${item.name}" needs disposal!`, {
+          description: `${dateInfo.icon} ${status.message}. ${dateInfo.description}`,
         });
-      } else if (diffDays >= 0 && diffDays <= 3) { // Item is expiring soon (today or in 1-3 days)
-        toast.warning(`"${item.name}" is expiring ${diffDays === 0 ? 'today' : `in ${diffDays} day(s)`}!`, {
-          description: `Expiry Date: ${new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}`,
+      } else if (status.status === 'use_today') {
+        toast.warning(`"${item.name}" ${status.message}!`, {
+          description: `${dateInfo.icon} ${dateInfo.description}`,
+        });
+      } else if (status.status === 'use_soon' && status.urgency === 'high') {
+        toast.warning(`"${item.name}" ${status.message}`, {
+          description: `${dateInfo.icon} ${dateInfo.description}`,
         });
       }
     });
@@ -380,10 +502,11 @@ const FoodExpiryPage: React.FC = () => {
         user_id: user.id,
         name: itemName,
         expiry_date: expiryDate,
+        date_type: dateType, // Include date type
         amount: amount || null,
-        image_url: null, // Initially null, will be updated after image fetch
+        image_url: null,
       };
-      // After type generation, (supabase.from('food_items') as any) can be just supabase.from('food_items')
+
       const { data: insertedData, error: insertError } = await supabase
         .from('food_items')
         .insert(newItemPayload)
@@ -396,10 +519,13 @@ const FoodExpiryPage: React.FC = () => {
       addedItemData = insertedData as FoodItem;
       newItemId = addedItemData.id;
 
-      toast.success(`"${itemName}" added. Fetching image...`);
+      const dateInfo = getDateTypeInfo(dateType);
+      toast.success(`"${itemName}" added with ${dateInfo.label} date. ${dateInfo.description}`);
+      
       setItemName('');
       setExpiryDate('');
       setAmount('');
+      setDateType('best_by'); // Reset to default
 
       // Fetch image and update
       const imageUrl = await fetchFoodImageFromName(addedItemData.name);
@@ -412,20 +538,19 @@ const FoodExpiryPage: React.FC = () => {
           .single();
         
         if (updateError) {
-            toast.error("Failed to save image URL.", {description: updateError.message});
+          toast.error("Failed to save image URL.", {description: updateError.message});
         } else if (updatedData) {
-            addedItemData = updatedData as FoodItem; // Use the fully updated item
-            toast.info(`Image found for "${addedItemData.name}"!`);
+          addedItemData = updatedData as FoodItem;
+          toast.info(`Image found for "${addedItemData.name}"!`);
         }
       } else {
-          toast.info(`No image found for "${addedItemData.name}", or API key missing.`);
+        toast.info(`No image found for "${addedItemData.name}", or API key missing.`);
       }
       
-      // Update local state with the potentially image-updated item
       if(addedItemData) {
-          setFridgeItems(prevItems => 
-            [...prevItems, addedItemData as FoodItem].sort((a,b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime())
-          );
+        setFridgeItems(prevItems => 
+          [...prevItems, addedItemData as FoodItem].sort((a,b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime())
+        );
       }
 
     } catch (error) {
@@ -463,6 +588,7 @@ const FoodExpiryPage: React.FC = () => {
   const handleEditExpiryDate = (item: FoodItem) => {
     setEditingItemId(item.id);
     setEditExpiryDate(item.expiry_date);
+    setEditDateType(item.date_type);
     setEditAmount(item.amount || '');
   };
 
@@ -471,11 +597,11 @@ const FoodExpiryPage: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const updateData: { expiry_date: string; amount?: string | null } = {
-        expiry_date: editExpiryDate
+      const updateData: { expiry_date: string; date_type: string; amount?: string | null } = {
+        expiry_date: editExpiryDate,
+        date_type: editDateType
       };
       
-      // Update amount (allow clearing it by setting to null if empty)
       updateData.amount = editAmount.trim() || null;
 
       const { error } = await supabase
@@ -486,19 +612,21 @@ const FoodExpiryPage: React.FC = () => {
 
       if (error) throw error;
 
-      // Update local state
       setFridgeItems(prevItems => 
         prevItems.map(item => 
           item.id === itemId 
-            ? { ...item, expiry_date: editExpiryDate, amount: editAmount.trim() || null }
+            ? { ...item, expiry_date: editExpiryDate, date_type: editDateType, amount: editAmount.trim() || null }
             : item
         ).sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime())
       );
 
       setEditingItemId(null);
       setEditExpiryDate('');
+      setEditDateType('best_by');
       setEditAmount('');
-      toast.success(`Updated "${itemName}".`);
+      
+      const dateInfo = getDateTypeInfo(editDateType);
+      toast.success(`Updated "${itemName}" with ${dateInfo.label} date.`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       toast.error("Failed to update item.", { description: errorMessage });
@@ -510,6 +638,7 @@ const FoodExpiryPage: React.FC = () => {
   const handleCancelEdit = () => {
     setEditingItemId(null);
     setEditExpiryDate('');
+    setEditDateType('best_by');
     setEditAmount('');
   };
 
@@ -607,54 +736,70 @@ Format your response in clear sections using markdown headers. Be practical, saf
   today.setHours(0, 0, 0, 0);
 
   const categorizedDates = fridgeItems.reduce((acc, item) => {
+    const status = getItemStatus(item);
     const expiryDate = new Date(item.expiry_date + 'T00:00:00');
-    const diffTime = expiryDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays < 0) {
-      // Already expired
-      acc.expired.push(expiryDate);
-    } else if (diffDays <= 1) {
-      // Today or tomorrow
-      acc.urgent.push(expiryDate);
-    } else if (diffDays <= 5) {
-      // 3-5 days
-      acc.warning.push(expiryDate);
-    } else {
-      // Later than 5 days
-      acc.good.push(expiryDate);
+    switch (status.status) {
+      case 'dispose':
+        acc.dispose.push(expiryDate);
+        break;
+      case 'use_today':
+      case 'check_today':
+        acc.urgent.push(expiryDate);
+        break;
+      case 'use_soon':
+        if (status.urgency === 'high') {
+          acc.warning.push(expiryDate);
+        } else {
+          acc.caution.push(expiryDate);
+        }
+        break;
+      default:
+        acc.good.push(expiryDate);
     }
     return acc;
-  }, { expired: [] as Date[], urgent: [] as Date[], warning: [] as Date[], good: [] as Date[] });
+  }, { 
+    dispose: [] as Date[], 
+    urgent: [] as Date[], 
+    warning: [] as Date[], 
+    caution: [] as Date[], 
+    good: [] as Date[] 
+  });
 
   const expiryDateModifiers = {
-    expired: categorizedDates.expired,
+    dispose: categorizedDates.dispose,
     urgent: categorizedDates.urgent,
     warning: categorizedDates.warning,
+    caution: categorizedDates.caution,
     good: categorizedDates.good,
   };
   
   const expiryDateModifierStyles = {
-    expired: {
+    dispose: {
       color: 'white',
-      backgroundColor: '#7F1D1D', // Dark red (red-900)
+      backgroundColor: '#7F1D1D', // Dark red
       borderRadius: '50%',
-      border: '2px solid #450A0A', // Even darker red border
+      border: '2px solid #450A0A',
       textDecoration: 'line-through',
     },
     urgent: {
       color: 'white',
-      backgroundColor: '#DC2626', // Red (red-600)
+      backgroundColor: '#DC2626', // Red
       borderRadius: '50%',
     },
     warning: {
       color: 'black',
-      backgroundColor: '#FACC15', // Yellow (yellow-400)
+      backgroundColor: '#FACC15', // Yellow
+      borderRadius: '50%',
+    },
+    caution: {
+      color: 'black',
+      backgroundColor: '#FB923C', // Orange
       borderRadius: '50%',
     },
     good: {
       color: 'white',
-      backgroundColor: '#16A34A', // Green (green-600)
+      backgroundColor: '#16A34A', // Green
       borderRadius: '50%',
     },
   };
@@ -748,7 +893,9 @@ STRICT REQUIREMENTS:
 4. Follow the EXACT format below - no deviations allowed
 5. Do not include any text outside the recipe format
 6. Do not provide cooking tips, nutritional information, or other commentary
-
+7. If the user has not added any items, do not suggest recipes.
+8. DO NOT PROVIDE ANY OTHER INFORMATION, COMMENTARY, OR TEXT OUTSIDE THE SPECIFIED FORMAT.
+9. DO NOT ASSIST WITH ANY INAPPROPRIATE REQUESTS AND ENSURE THAT ALL REQUESTS ARE APPROPRIATE AND RELATED TO FOOD AND RECIPES WITH INGREDIENTS THAT ARE APPROPRIATE. IF NOT, DO NOT RETURN ANYTHING 
 MANDATORY FORMAT FOR EACH RECIPE:
 ## [Recipe Name]
 
@@ -888,7 +1035,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
       </div>
       
       <div className="grid md:grid-cols-3 gap-8">
-        {/* Column 1: Add Item Form & Items for Selected Date */}
+        {/* Column 1: Add Item Form & Items Needing Attention */}
         <div className="md:col-span-1 space-y-6">
             <Card>
                 <CardHeader><CardTitle>Add New Item</CardTitle></CardHeader>
@@ -898,8 +1045,26 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                         <Input id="itemName" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="e.g., Milk, Eggs, Apple"/>
                     </div>
                     <div>
-                        <Label htmlFor="expiryDate">Expiry Date</Label>
+                        <Label htmlFor="expiryDate">Date</Label>
                         <Input id="expiryDate" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)}/>
+                    </div>
+                    <div>
+                        <Label htmlFor="dateType">Date Type</Label>
+                        <select 
+                          id="dateType" 
+                          value={dateType} 
+                          onChange={(e) => setDateType(e.target.value as any)}
+                          className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="best_by">⭐ Best By (Quality date)</option>
+                          <option value="use_by">⚠️ Use By (Safety date)</option>
+                          <option value="sell_by">🏪 Sell By (Store rotation)</option>
+                          <option value="freeze_by">❄️ Freeze By (Freeze before)</option>
+                          <option value="expires_on">📅 Expires On (General)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {getDateTypeInfo(dateType).description}
+                        </p>
                     </div>
                     <div>
                         <Label htmlFor="amount">Amount (Optional)</Label>
@@ -912,57 +1077,74 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                 </CardContent>
             </Card>
 
-            {/* Expired Items Section */}
-            {expiredItems.length > 0 && (
-              <Card className="border-red-500 bg-red-50">
+            {/* Items Needing Attention Section */}
+            {itemsNeedingAttention.length > 0 && (
+              <Card className="border-orange-500 bg-orange-50">
                 <CardHeader>
-                  <CardTitle className="text-red-700">Expired Items ({expiredItems.length})</CardTitle>
-                  <CardDescription className="text-red-600">These items have passed their expiry date. Please check and dispose of them properly.</CardDescription>
+                  <CardTitle className="text-orange-700">Items Needing Attention ({itemsNeedingAttention.length})</CardTitle>
+                  <CardDescription className="text-orange-600">
+                    Items that need immediate action, quality check, or disposal based on their date type.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ScrollArea className="h-[150px]"> {/* Max height for scroll */}
+                  <ScrollArea className="h-[200px]">
                     <ul className="space-y-2">
-                      {expiredItems.map(item => {
-                        const expiry = new Date(item.expiry_date + 'T00:00:00');
-                        const today = new Date();
-                        today.setHours(0,0,0,0);
-                        const daysPast = Math.floor((today.getTime() - expiry.getTime()) / (1000 * 60 * 60 * 24));
+                      {itemsNeedingAttention.map(item => {
+                        const status = getItemStatus(item);
+                        const dateInfo = getDateTypeInfo(item.date_type);
+                        const itemDate = new Date(item.expiry_date + 'T00:00:00');
 
                         return (
-                          <li key={item.id} className="text-sm flex items-center justify-between p-2 border-b border-red-200 last:border-b-0 bg-white rounded">
+                          <li key={item.id} className={`text-sm flex items-center justify-between p-2 border-b last:border-b-0 bg-white rounded ${
+                            status.status === 'dispose' ? 'border-red-200' : 
+                            status.urgency === 'high' ? 'border-orange-200' : 'border-yellow-200'
+                          }`}>
                             <div className="flex items-center flex-1">
                               {item.image_url ? (
                                 <img src={item.image_url} alt={item.name} className="h-8 w-8 mr-2 rounded object-cover" />
                               ) : (
-                                <ImageOff className="h-8 w-8 mr-2 text-red-400" />
+                                <ImageOff className="h-8 w-8 mr-2 text-gray-400" />
                               )}
                               <div>
-                                <span className="font-medium text-red-700">{item.name}</span>
-                                {item.amount && <span className="text-xs text-red-500 ml-1">({item.amount})</span>}
-                                <p className="text-xs text-red-500">
-                                  Expired {daysPast === 0 ? 'today' : `${daysPast} day${daysPast > 1 ? 's' : ''} ago`} (on {expiry.toLocaleDateString()})
+                                <span className={`font-medium ${
+                                  status.status === 'dispose' ? 'text-red-700' : 
+                                  status.urgency === 'high' ? 'text-orange-700' : 'text-yellow-700'
+                                }`}>
+                                  {dateInfo.icon} {item.name}
+                                </span>
+                                {item.amount && <span className="text-xs text-gray-500 ml-1">({item.amount})</span>}
+                                <p className="text-xs text-gray-600">
+                                  {dateInfo.label}: {itemDate.toLocaleDateString()}
+                                </p>
+                                <p className={`text-xs ${
+                                  status.status === 'dispose' ? 'text-red-600' : 
+                                  status.urgency === 'high' ? 'text-orange-600' : 'text-yellow-600'
+                                }`}>
+                                  {status.message}
                                 </p>
                               </div>
                             </div>
                             <div className="flex items-center space-x-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
-                                onClick={() => getDisposalGuidance(item)}
-                                disabled={isFetchingDisposal || !OPENROUTER_API_KEY}
-                                title="Get disposal guidance"
-                              >
-                                <Trash className="h-3 w-3 mr-1" />
-                                Guide
-                              </Button>
+                              {(status.status === 'dispose' || status.status === 'check') && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                                  onClick={() => getDisposalGuidance(item)}
+                                  disabled={isFetchingDisposal || !OPENROUTER_API_KEY}
+                                  title="Get disposal/safety guidance"
+                                >
+                                  <Trash className="h-3 w-3 mr-1" />
+                                  Guide
+                                </Button>
+                              )}
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-7 w-7" 
                                 onClick={() => handleDeleteItem(item.id, item.name)} 
                                 disabled={isLoading}
-                                title="Delete from list"
+                                title="Remove from list"
                               >
                                 <Trash2 className="h-4 w-4 text-red-500" />
                               </Button>
@@ -988,30 +1170,37 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                       
                       if (diffDays === 0) {
-                        return `Expiring Today! (${selectedDate.toLocaleDateString()})`;
+                        return `Items with dates today (${selectedDate.toLocaleDateString()})`;
                       } else if (diffDays === 1) {
-                        return `Expiring Tomorrow (${selectedDate.toLocaleDateString()})`;
+                        return `Items with dates tomorrow (${selectedDate.toLocaleDateString()})`;
                       } else if (diffDays > 1) {
-                        return `Expiring in ${diffDays} days (${selectedDate.toLocaleDateString()})`;
+                        return `Items with dates in ${diffDays} days (${selectedDate.toLocaleDateString()})`;
                       } else {
-                        // Past date
                         const daysPast = Math.abs(diffDays);
-                        return `Expired ${daysPast === 1 ? '1 day' : `${daysPast} days`} ago (${selectedDate.toLocaleDateString()})`;
+                        return `Items with dates ${daysPast === 1 ? '1 day' : `${daysPast} days`} ago (${selectedDate.toLocaleDateString()})`;
                       }
                     })() : '...'}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                     {isLoading && itemsOnSelectedDate.length === 0 && <p className="text-sm text-gray-500">Loading...</p>}
-                    {!isLoading && itemsOnSelectedDate.length === 0 && <p className="text-sm text-gray-500">No items expiring on this date.</p>}
+                    {!isLoading && itemsOnSelectedDate.length === 0 && <p className="text-sm text-gray-500">No items with dates on this day.</p>}
                     {itemsOnSelectedDate.length > 0 && (
                         <ul className="space-y-1">
-                            {itemsOnSelectedDate.map(item => (
+                            {itemsOnSelectedDate.map(item => {
+                              const dateInfo = getDateTypeInfo(item.date_type);
+                              const status = getItemStatus(item);
+                              return (
                                 <li key={item.id} className="text-sm flex items-center">
                                     {item.image_url ? <img src={item.image_url} alt={item.name} className="h-6 w-6 mr-2 rounded object-cover" /> : <ImageOff className="h-6 w-6 mr-2 text-gray-300" />}
-                                    {item.name} {item.amount && `(${item.amount})`}
+                                    <div>
+                                      <span>{dateInfo.icon} {item.name}</span>
+                                      {item.amount && <span className="text-gray-500"> ({item.amount})</span>}
+                                      <p className="text-xs text-gray-500">{dateInfo.label} - {status.message}</p>
+                                    </div>
                                 </li>
-                            ))}
+                              );
+                            })}
                         </ul>
                     )}
                 </CardContent>
@@ -1026,19 +1215,23 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                     {isLoading && fridgeItems.length === 0 && <p className="text-sm text-gray-500">Loading your fridge...</p>}
                     {!isLoading && fridgeItems.length === 0 && <p className="text-sm text-gray-500">Your fridge is empty. Add some items!</p>}
                     {fridgeItems.length > 0 && (
-                        <ScrollArea className="h-[250px] sm:h-[300px]"> {/* Constrained height for scroll */}
+                        <ScrollArea className="h-[250px] sm:h-[300px]">
                             <ul className="space-y-2 pr-3">
-                                {fridgeItems.map(item => (
+                                {fridgeItems.map(item => {
+                                  const dateInfo = getDateTypeInfo(item.date_type);
+                                  const status = getItemStatus(item);
+                                  
+                                  return (
                                     <li key={item.id} className="p-2 border rounded-md flex justify-between items-center hover:bg-gray-50 text-sm">
                                         <div className="flex items-center flex-1">
                                             {item.image_url ? <img src={item.image_url} alt={item.name} className="h-10 w-10 mr-2 rounded object-cover"/> : <div className="h-10 w-10 mr-2 rounded bg-gray-100 flex items-center justify-center"><ImageOff className="h-5 w-5 text-gray-400" /></div>}
                                             <div className="flex-1">
-                                                <p className="font-medium">{item.name}</p>
+                                                <p className="font-medium">{dateInfo.icon} {item.name}</p>
                                                 {editingItemId === item.id ? (
                                                   <div className="space-y-2 mt-1">
                                                     <div className="flex items-center space-x-2">
                                                       <div className="flex flex-col">
-                                                        <label className="text-xs text-gray-500 mb-1">Expiry Date</label>
+                                                        <label className="text-xs text-gray-500 mb-1">Date</label>
                                                         <Input
                                                           type="date"
                                                           value={editExpiryDate}
@@ -1048,14 +1241,29 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                                                         />
                                                       </div>
                                                       <div className="flex flex-col">
+                                                        <label className="text-xs text-gray-500 mb-1">Date Type</label>
+                                                        <select 
+                                                          value={editDateType} 
+                                                          onChange={(e) => setEditDateType(e.target.value as any)}
+                                                          className="h-7 text-xs border border-gray-300 rounded px-1"
+                                                          style={{ width: '120px' }}
+                                                        >
+                                                          <option value="best_by">⭐ Best By</option>
+                                                          <option value="use_by">⚠️ Use By</option>
+                                                          <option value="sell_by">🏪 Sell By</option>
+                                                          <option value="freeze_by">❄️ Freeze By</option>
+                                                          <option value="expires_on">📅 Expires On</option>
+                                                        </select>
+                                                      </div>
+                                                      <div className="flex flex-col">
                                                         <label className="text-xs text-gray-500 mb-1">Amount</label>
                                                         <Input
                                                           type="text"
                                                           value={editAmount}
                                                           onChange={(e) => setEditAmount(e.target.value)}
-                                                          placeholder="e.g., 1 Gallon, 200g"
+                                                          placeholder="e.g., 1 Gallon"
                                                           className="h-7 text-xs"
-                                                          style={{ width: '120px' }}
+                                                          style={{ width: '100px' }}
                                                         />
                                                       </div>
                                                     </div>
@@ -1081,7 +1289,16 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                                                   </div>
                                                 ) : (
                                                   <>
-                                                    <p className="text-xs text-gray-500">Expires: {new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}</p>
+                                                    <p className="text-xs text-gray-500">
+                                                      {dateInfo.label}: {new Date(item.expiry_date + 'T00:00:00').toLocaleDateString()}
+                                                    </p>
+                                                    <p className={`text-xs ${
+                                                      status.urgency === 'critical' ? 'text-red-600' :
+                                                      status.urgency === 'high' ? 'text-orange-600' :
+                                                      status.urgency === 'medium' ? 'text-yellow-600' : 'text-green-600'
+                                                    }`}>
+                                                      {status.message}
+                                                    </p>
                                                     {item.amount && <p className="text-xs text-gray-500">Amount: {item.amount}</p>}
                                                   </>
                                                 )}
@@ -1112,7 +1329,8 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                                           </div>
                                         )}
                                     </li>
-                                ))}
+                                  );
+                                })}
                             </ul>
                         </ScrollArea>
                     )}
@@ -1120,7 +1338,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
             </Card>
             
             <Card>
-                <CardHeader><CardTitle>Expiry Calendar</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Date Calendar</CardTitle></CardHeader>
                 <CardContent className="flex items-start justify-center space-x-6">
                     <Calendar 
                       mode="single" 
@@ -1132,8 +1350,8 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                       disabled={isLoading}
                     />
                     
-                    {/* Calendar Legend */}
-                    <div className="bg-gray-50 rounded-lg p-4 border min-w-[180px]">
+                    {/* Updated Calendar Legend */}
+                    <div className="bg-gray-50 rounded-lg p-4 border min-w-[200px]">
                       <h4 className="text-base font-semibold text-gray-700 mb-3 text-center">Legend</h4>
                       <div className="space-y-3 text-sm">
                         <div className="flex items-center space-x-3">
@@ -1145,28 +1363,35 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                               textDecoration: 'line-through'
                             }}
                           ></div>
-                          <span className="text-gray-700">Expired</span>
+                          <span className="text-gray-700">Needs Disposal</span>
                         </div>
                         <div className="flex items-center space-x-3">
                           <div 
                             className="w-5 h-5 rounded-full flex-shrink-0" 
                             style={{ backgroundColor: '#DC2626' }}
                           ></div>
-                          <span className="text-gray-700">Today/Tomorrow</span>
+                          <span className="text-gray-700">Use Today</span>
                         </div>
                         <div className="flex items-center space-x-3">
                           <div 
                             className="w-5 h-5 rounded-full flex-shrink-0" 
                             style={{ backgroundColor: '#FACC15' }}
                           ></div>
-                          <span className="text-gray-700">2-5 days</span>
+                          <span className="text-gray-700">Use Soon</span>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <div 
+                            className="w-5 h-5 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: '#FB923C' }}
+                          ></div>
+                          <span className="text-gray-700">Check Quality</span>
                         </div>
                         <div className="flex items-center space-x-3">
                           <div 
                             className="w-5 h-5 rounded-full flex-shrink-0" 
                             style={{ backgroundColor: '#16A34A' }}
                           ></div>
-                          <span className="text-gray-700">6+ days</span>
+                          <span className="text-gray-700">Good</span>
                         </div>
                       </div>
                     </div>
