@@ -363,8 +363,9 @@ const FoodExpiryPage: React.FC = () => {
         }
         const currentIngredientsKey = generateIngredientsKey(itemNamesArray);
 
-        // console.log("Attempting to load initial cached recipes for key:", currentIngredientsKey);
-        // setIsFetchingRecipes(true); // Indicate loading for recipes, even if cached
+        console.log("Attempting to load initial cached recipes for key:", currentIngredientsKey);
+        setIsFetchingRecipes(true); // Indicate loading for recipes, even if cached
+        
         try {
             const { data: cachedData, error: cacheError } = await supabase
                 .from('recipe_suggestions')
@@ -381,19 +382,19 @@ const FoodExpiryPage: React.FC = () => {
             }
 
             if (cachedData) {
-                // console.log("Found initial cached recipes:", cachedData);
+                console.log("Found initial cached recipes:", cachedData);
                 const parsedCache = parseRecipesMarkdown(cachedData.recipes_markdown, 'cache', new Date(cachedData.created_at).toLocaleDateString());
                 setSuggestedRecipesList(parsedCache);
                 toast.info("Previously suggested recipes loaded from cache.", {duration: 4000});
             } else {
-                // console.log("No initial cached recipes found for this set of ingredients.");
+                console.log("No initial cached recipes found for this set of ingredients.");
                 setSuggestedRecipesList([]); // Ensure list is empty if no cache
             }
         } catch (error) {
             console.error("Unexpected error fetching initial cached recipes:", error);
             setSuggestedRecipesList([]);
         } finally {
-            // setIsFetchingRecipes(false);
+            setIsFetchingRecipes(false);
         }
     };
     
@@ -402,7 +403,48 @@ const FoodExpiryPage: React.FC = () => {
         loadInitialCachedRecipes();
     }
 
-  }, [fridgeItems, user, isLoading, OPENROUTER_API_KEY]); // Depend on fridgeItems, user, and isLoading
+  }, [fridgeItems, user, isLoading, OPENROUTER_API_KEY, initialCacheLoadAttempted]); // Added initialCacheLoadAttempted to dependencies
+
+  // Additional useEffect to load any existing cached recipes on page load
+  useEffect(() => {
+    const loadAllCachedRecipes = async () => {
+      if (!user || !OPENROUTER_API_KEY) return;
+      
+      try {
+        // Get the most recent cached recipes for this user
+        const { data: recentCachedData, error: cacheError } = await supabase
+          .from('recipe_suggestions')
+          .select('recipes_markdown, created_at, ingredients_key')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cacheError) {
+          console.error("Error fetching recent cached recipes:", cacheError.message);
+          return;
+        }
+
+        if (recentCachedData && suggestedRecipesList.length === 0) {
+          console.log("Loading most recent cached recipes on page load:", recentCachedData);
+          const parsedCache = parseRecipesMarkdown(
+            recentCachedData.recipes_markdown, 
+            'cache', 
+            new Date(recentCachedData.created_at).toLocaleDateString()
+          );
+          setSuggestedRecipesList(parsedCache);
+          toast.info("Loaded your most recent recipe suggestions.", { duration: 3000 });
+        }
+      } catch (error) {
+        console.error("Error loading recent cached recipes:", error);
+      }
+    };
+
+    // Only run once when user is available and we haven't loaded recipes yet
+    if (user && suggestedRecipesList.length === 0 && !isFetchingRecipes) {
+      loadAllCachedRecipes();
+    }
+  }, [user, OPENROUTER_API_KEY]); // Only depend on user and API key, run once
 
   // Update items for selected calendar date
   useEffect(() => {
@@ -866,6 +908,7 @@ Format your response in clear sections using markdown headers. Be practical, saf
         if (cacheError) throw cacheError;
 
         if (cachedData) {
+          console.log("Found cached recipes for manual request:", cachedData);
           toast.success("Loaded cached recipe suggestions!");
           const parsedCache = parseRecipesMarkdown(cachedData.recipes_markdown, 'cache', new Date(cachedData.created_at).toLocaleDateString());
           setSuggestedRecipesList(parsedCache);
@@ -954,7 +997,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
             { role: 'user', content: prompt },
           ],
           max_tokens: 2500, 
-          temperature: 0.5, // Lower temperature for more consistent formatting
+          temperature: 0.5,
         }),
       });
 
@@ -970,10 +1013,9 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
         const recipesMarkdown = data.choices[0].message.content;
         
-        // Clean up the response to remove any extra text before/after recipes
         const cleanedMarkdown = recipesMarkdown
-          .replace(/^[^#]*(?=##)/s, '') // Remove text before first recipe
-          .replace(/%%%---RECIPE_SEPARATOR---%%%\s*$/, ''); // Remove trailing separator
+          .replace(/^[^#]*(?=##)/s, '')
+          .replace(/%%%---RECIPE_SEPARATOR---%%%\s*$/, '');
         
         const newRecipes = parseRecipesMarkdown(cleanedMarkdown, 'api');
         
@@ -983,16 +1025,15 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
           return;
         }
         
-        setSuggestedRecipesList(prevList => {
-          const oldCachedRecipes = prevList.filter(r => r.source === 'cache' && r.id.startsWith('cache-'));
-          return [...newRecipes, ...oldCachedRecipes];
-        });
+        // Replace all recipes with new ones (don't mix with old cached ones)
+        setSuggestedRecipesList(newRecipes);
         setExpandedRecipeId(null); 
         if (fetchNew) {
           setLastFreshFetchTime(Date.now()); 
         }
 
         if (user) { 
+          console.log("Saving new recipes to cache with key:", currentIngredientsKey);
           const { error: upsertError } = await supabase
             .from('recipe_suggestions')
             .upsert({
@@ -1005,6 +1046,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
             console.error("Error upserting recipe suggestion:", upsertError); 
             toast.error("Could not cache recipes."); 
           } else { 
+            console.log("Successfully cached new recipes");
             toast.success("New recipes fetched and cached!"); 
           }
         }
