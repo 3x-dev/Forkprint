@@ -1270,7 +1270,7 @@ Focus on:
       </div>
 
       <p className="text-gray-600 mb-6">
-        Try to buy foods with low-waste or no plastic packaging. Log your purchases below.
+        Try to buy foods with low-waste packaging. Log your purchases below.
       </p>
 
       {/* Two-column layout: Log section on left, Progress on right */}
