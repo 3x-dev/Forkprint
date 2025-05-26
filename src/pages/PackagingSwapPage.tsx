@@ -23,7 +23,7 @@ const SPOONACULAR_IMAGE_BASE_URL = "https://spoonacular.com/cdn/ingredients_100x
 const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY || import.meta.env.ANTHROPIC_API_KEY; // For VITE_ or direct
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
-// OpenRouter API configuration
+// OpenRouter API configuration 
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const YOUR_SITE_URL = window.location.origin;
