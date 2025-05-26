@@ -3,11 +3,11 @@ import { CheckCircle2 } from "lucide-react";
 const features = [
   {
     name: 'Food Expiry',
-    description: `Track food expiration dates with reminders and composting guidance to reduce food waste.`,
+    description: `Track food expiration dates with reminders and composting guidance to reduce food waste. Generate AI recipes based on your ingredients.`,
   },
   {
     name: 'Sustainable Packaging Swapping',
-    description: `Log your packaging choices and track your progress towards using less high waste packaging and making sustainable swaps.`,
+    description: `Log your packaging choices and track your progress towards using less high waste packaging and making sustainable swaps. Generate AI insights on your packaging choices.`,
   },
   {
     name: 'Food Waste Tracker',
@@ -39,7 +39,7 @@ export function Features() {
             Manage Your Food, Minimize Your Waste
           </p>
           <p className="mt-6 text-lg leading-8 text-gray-600 animate-fade-in transform-gpu will-change-transform" style={{ animationDelay: "300ms" }}>
-            Forkprint helps you reduce food waste, save money, and ensure you always have what you need, smartly.
+            Forkprint tracks your habits and helps you reduce food waste.
           </p>
         </div>
         <div className="mx-auto mt-16 max-w-2xl sm:mt-20 lg:mt-24 lg:max-w-5xl">
