@@ -174,6 +174,11 @@ const PackagingSwapPage = () => {
   const [editNotes, setEditNotes] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
+  // State for Manual Switch Feature
+  const [editManualSwitch, setEditManualSwitch] = useState(false);
+  const [editSelectedPreviousLog, setEditSelectedPreviousLog] = useState<string>('');
+  const [editCustomPreviousItem, setEditCustomPreviousItem] = useState('');
+
   // --- START ADDITION: State for chart data ---
   const [packagingSummaryData, setPackagingSummaryData] = useState<PackagingSwapSummary[]>([]);
   const [chartTimeRange, setChartTimeRange] = useState<'week' | 'month' | '3months' | 'year'>('month');
@@ -237,7 +242,7 @@ const PackagingSwapPage = () => {
     if (!user) return;
     setIsLoading(true);
     try {
-      // Use `as any` to bypass current Supabase client type limitations for this new table
+      // Note: Using 'as any' because packaging_logs table is not yet in the generated Supabase types
       const { data, error } = await (supabase.from('packaging_logs') as any)
         .select('*')
         .eq('user_id', user.id)
@@ -369,7 +374,7 @@ const PackagingSwapPage = () => {
       // Create ISO string that preserves the selected date regardless of timezone
       const purchaseDateStr = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${millis}Z`;
 
-      // Use `as any` for insert operation as well
+      // Note: Using 'as any' because packaging_logs table is not yet in the generated Supabase types
       const { data, error } = await (supabase.from('packaging_logs') as any)
         .insert([{ 
           user_id: user.id, 
@@ -488,6 +493,33 @@ const PackagingSwapPage = () => {
     
     setEditQuantity(logItem.quantity.toString());
     setEditNotes(logItem.notes || '');
+    
+    // Initialize manual switch state
+    setEditManualSwitch(!!logItem.made_switch);
+    if (logItem.made_switch && logItem.previous_item_description) {
+      // If there's a custom previous item description, it was a manual switch
+      setEditSelectedPreviousLog('custom');
+      setEditCustomPreviousItem(logItem.previous_item_description);
+    } else if (logItem.made_switch && logItem.previous_packaging_type) {
+      // Try to find the previous log that matches
+      const previousLog = userLogs.find(log => 
+        log.packaging_type === logItem.previous_packaging_type && 
+        log.id !== logItem.id &&
+        new Date(log.created_at) < new Date(logItem.created_at)
+      );
+      if (previousLog) {
+        setEditSelectedPreviousLog(previousLog.id);
+        setEditCustomPreviousItem('');
+      } else {
+        // Fallback to custom if we can't find the log
+        setEditSelectedPreviousLog('custom');
+        setEditCustomPreviousItem(`Previous item with ${logItem.previous_packaging_type} packaging`);
+      }
+    } else {
+      setEditSelectedPreviousLog('');
+      setEditCustomPreviousItem('');
+    }
+    
     setIsEditModalOpen(true);
   };
 
@@ -500,6 +532,11 @@ const PackagingSwapPage = () => {
     setEditQuantity('1');
     setEditNotes('');
     setIsSubmittingEdit(false);
+    
+    // Reset manual switch state
+    setEditManualSwitch(false);
+    setEditSelectedPreviousLog('');
+    setEditCustomPreviousItem('');
   };
 
   const handleEditSubmit = async () => {
@@ -534,23 +571,70 @@ const PackagingSwapPage = () => {
 
     setIsSubmittingEdit(true);
     try {
-      // For edits, we need to calculate switch information based on the relationship 
-      // to the previous separate log entry, not the original values of the same entry
-      const previousLogForEditedItem = getPreviousLogForFoodItem(editFoodItemName, editingLogItem.id, editingLogItem.created_at);
-      const editSwitchDetection = detectSwitchType(packagingTypeToSave, packagingDetail.isLowWaste, previousLogForEditedItem);
+      let updatedLogData: Partial<PackagingLog>;
 
-      const updatedLogData: Partial<PackagingLog> = {
-        food_item_name: editFoodItemName,
-        packaging_type: packagingTypeToSave,
-        is_low_waste: packagingDetail.isLowWaste,
-        quantity: currentEditQuantity,
-        notes: editNotes || null,
-        // Use the switch detection based on relationship to previous separate log entry
-        made_switch: editSwitchDetection.madeSwitch,
-        previous_packaging_type: editSwitchDetection.previousPackagingType,
-        // Clear previous_item_description since we're recalculating switch status
-        previous_item_description: null,
-      };
+      if (editManualSwitch) {
+        // Handle manual switch
+        if (editSelectedPreviousLog === 'custom') {
+          // Custom previous item
+          if (!editCustomPreviousItem.trim()) {
+            toast.error('Please specify the previous item you switched from.');
+            setIsSubmittingEdit(false);
+            return;
+          }
+          
+          updatedLogData = {
+            food_item_name: editFoodItemName,
+            packaging_type: packagingTypeToSave,
+            is_low_waste: packagingDetail.isLowWaste,
+            quantity: currentEditQuantity,
+            notes: editNotes || null,
+            made_switch: true,
+            previous_item_description: editCustomPreviousItem.trim(),
+            previous_packaging_type: null, // Clear this since we're using custom description
+          };
+        } else if (editSelectedPreviousLog) {
+          // Selected from existing logs
+          const selectedPreviousLog = userLogs.find(log => log.id === editSelectedPreviousLog);
+          if (!selectedPreviousLog) {
+            toast.error('Selected previous log not found.');
+            setIsSubmittingEdit(false);
+            return;
+          }
+          
+          updatedLogData = {
+            food_item_name: editFoodItemName,
+            packaging_type: packagingTypeToSave,
+            is_low_waste: packagingDetail.isLowWaste,
+            quantity: currentEditQuantity,
+            notes: editNotes || null,
+            made_switch: true,
+            previous_packaging_type: selectedPreviousLog.packaging_type,
+            previous_item_description: `${selectedPreviousLog.food_item_name} (${packagingTypes.find(p => p.id === selectedPreviousLog.packaging_type)?.label || selectedPreviousLog.packaging_type})`,
+          };
+        } else {
+          toast.error('Please select a previous item or specify a custom one.');
+          setIsSubmittingEdit(false);
+          return;
+        }
+      } else {
+        // No manual switch - use automatic detection or clear switch data
+        const previousLogForEditedItem = getPreviousLogForFoodItem(editFoodItemName, editingLogItem.id, editingLogItem.created_at);
+        const editSwitchDetection = detectSwitchType(packagingTypeToSave, packagingDetail.isLowWaste, previousLogForEditedItem);
+
+        updatedLogData = {
+          food_item_name: editFoodItemName,
+          packaging_type: packagingTypeToSave,
+          is_low_waste: packagingDetail.isLowWaste,
+          quantity: currentEditQuantity,
+          notes: editNotes || null,
+          // Use the switch detection based on relationship to previous separate log entry
+          made_switch: editSwitchDetection.madeSwitch,
+          previous_packaging_type: editSwitchDetection.previousPackagingType,
+          // Clear previous_item_description since we're using automatic detection
+          previous_item_description: null,
+        };
+      }
 
       // Remove undefined fields to avoid sending them in update
       Object.keys(updatedLogData).forEach(key => 
@@ -578,12 +662,18 @@ const PackagingSwapPage = () => {
       );
       toast.success('Log entry updated successfully!');
       
-      // Show feedback based on the switch detection
-      if (previousLogForEditedItem) {
-        showDynamicFeedback(locallyUpdatedLog, previousLogForEditedItem, editSwitchDetection.switchType);
-      } else {
-        // No previous log entry for this food item, treat as first-time logging
-        showDynamicFeedback(locallyUpdatedLog, null, 'none');
+      // Show feedback based on manual or automatic switch detection
+      if (editManualSwitch && locallyUpdatedLog.made_switch) {
+        showManualSwitchFeedback(locallyUpdatedLog);
+      } else if (!editManualSwitch) {
+        const previousLogForEditedItem = getPreviousLogForFoodItem(editFoodItemName, editingLogItem.id, editingLogItem.created_at);
+        const editSwitchDetection = detectSwitchType(packagingTypeToSave, packagingDetail.isLowWaste, previousLogForEditedItem);
+        if (previousLogForEditedItem) {
+          showDynamicFeedback(locallyUpdatedLog, previousLogForEditedItem, editSwitchDetection.switchType);
+        } else {
+          // No previous log entry for this food item, treat as first-time logging
+          showDynamicFeedback(locallyUpdatedLog, null, 'none');
+        }
       }
       
       closeEditModal();
@@ -628,6 +718,17 @@ const PackagingSwapPage = () => {
     }
   };
   // --- END ADDITION ---
+
+  // Helper function to get eligible logs for manual switch selection
+  const getEligiblePreviousLogs = (currentLogId: string, currentLogDate: string): PackagingLog[] => {
+    return userLogs
+      .filter(log => 
+        log.id !== currentLogId && 
+        new Date(log.created_at) < new Date(currentLogDate)
+      )
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 20); // Limit to most recent 20 logs for performance
+  };
 
   // Helper function to find the most recent previous log for a given food item
   const getPreviousLogForFoodItem = (foodName: string, currentLogIdToExclude?: string, currentLogDate?: string): PackagingLog | null => {
@@ -700,32 +801,112 @@ const PackagingSwapPage = () => {
 
   // --- START ADDITION: Helper function for switch notification message ---
   const getSwitchNotificationMessage = (log: PackagingLog): { message: string, type: 'positive' | 'negative' | 'neutral' | 'none' } => {
-    if (!log.made_switch || !log.previous_packaging_type) {
+    if (!log.made_switch) {
       return { message: '', type: 'none' };
     }
 
     const currentPackagingInfo = packagingTypes.find(p => p.id === log.packaging_type);
-    const previousPackagingInfo = packagingTypes.find(p => p.id === log.previous_packaging_type);
-
-    if (!currentPackagingInfo || !previousPackagingInfo) {
-      // Should not happen if data is consistent
+    if (!currentPackagingInfo) {
       return { message: 'Packaging info incomplete for switch.', type: 'neutral' };
     }
 
-    const currentLabel = currentPackagingInfo.label;
-    const previousLabel = previousPackagingInfo.label;
-
-    if (currentPackagingInfo.isLowWaste && !previousPackagingInfo.isLowWaste) {
-      return { message: `Sustainable Switch! From ${previousLabel} to ${currentLabel}.`, type: 'positive' };
-    } else if (!currentPackagingInfo.isLowWaste && previousPackagingInfo.isLowWaste) {
-      return { message: `Unsustainable Switch: From ${previousLabel} (low waste) to ${currentLabel}.`, type: 'negative' };
-    } else if (currentPackagingInfo.isLowWaste && previousPackagingInfo.isLowWaste) {
-      return { message: `Packaging Changed (still low waste): From ${previousLabel} to ${currentLabel}.`, type: 'neutral' };
-    } else { // Both high waste, but different
-      return { message: `Packaging Changed: From ${previousLabel} to ${currentLabel}. (Both high waste)`, type: 'neutral' };
+    // Handle manual switch with custom description
+    if (log.previous_item_description && !log.previous_packaging_type) {
+      if (currentPackagingInfo.isLowWaste) {
+        return { message: `Manual sustainable switch: From "${log.previous_item_description}" to ${currentPackagingInfo.label}`, type: 'positive' };
+      } else {
+        return { message: `Manual unsustainable switch: From "${log.previous_item_description}" to ${currentPackagingInfo.label}`, type: 'negative' };
+      }
     }
+
+    // Handle switch with packaging type reference
+    if (log.previous_packaging_type) {
+      const previousPackagingInfo = packagingTypes.find(p => p.id === log.previous_packaging_type);
+      
+      if (!previousPackagingInfo) {
+        // Fallback for custom packaging types
+        const switchDescription = log.previous_item_description || `previous ${log.previous_packaging_type} packaging`;
+        if (currentPackagingInfo.isLowWaste) {
+          return { message: `Switch: From ${switchDescription} to ${currentPackagingInfo.label} (sustainable!)`, type: 'positive' };
+        } else {
+          return { message: `Switch: From ${switchDescription} to ${currentPackagingInfo.label}`, type: 'neutral' };
+        }
+      }
+
+      const currentLabel = currentPackagingInfo.label;
+      const previousLabel = previousPackagingInfo.label;
+      const isManual = !!log.previous_item_description;
+
+      if (currentPackagingInfo.isLowWaste && !previousPackagingInfo.isLowWaste) {
+        return { message: `${isManual ? 'Manual sustainable switch' : 'Sustainable switch'}: From ${previousLabel} to ${currentLabel}.`, type: 'positive' };
+      } else if (!currentPackagingInfo.isLowWaste && previousPackagingInfo.isLowWaste) {
+        return { message: `${isManual ? 'Manual unsustainable switch' : 'Unsustainable switch'}: From ${previousLabel} (low waste) to ${currentLabel}.`, type: 'negative' };
+      } else if (currentPackagingInfo.isLowWaste && previousPackagingInfo.isLowWaste) {
+        return { message: `${isManual ? 'Manual switch (no sustainability change)' : 'Packaging changed (still low waste)'}: From ${previousLabel} to ${currentLabel}.`, type: 'neutral' };
+      } else { // Both high waste, but different
+        return { message: `${isManual ? 'Manual switch (no sustainability change)' : 'Packaging changed'}: From ${previousLabel} to ${currentLabel}. (Both high waste)`, type: 'neutral' };
+      }
+    }
+
+    return { message: '', type: 'none' };
   };
   // --- END ADDITION ---
+
+  const showManualSwitchFeedback = (currentLog: PackagingLog) => {
+    const currentPackagingInfo = packagingTypes.find(p => p.id === currentLog.packaging_type);
+    if (!currentPackagingInfo) return;
+
+    if (currentLog.previous_item_description) {
+      // Manual switch with custom description
+      if (currentPackagingInfo.isLowWaste) {
+        toast.success(
+          `🎉 Manual sustainable switch recorded!`,
+          {
+            description: `You switched from "${currentLog.previous_item_description}" to "${currentLog.food_item_name}" with ${currentPackagingInfo.label}. This manual sustainable switch helps track your conscious packaging choices!`,
+            duration: 8000,
+          }
+        );
+      } else {
+        toast.warning(
+          `Manual unsustainable switch recorded for "${currentLog.food_item_name}".`,
+          {
+            description: `You switched from "${currentLog.previous_item_description}" to ${currentPackagingInfo.label}. Consider looking for more sustainable options next time!`,
+            duration: 8000,
+          }
+        );
+      }
+    } else if (currentLog.previous_packaging_type) {
+      // Manual switch with reference to previous log
+      const previousPackagingInfo = packagingTypes.find(p => p.id === currentLog.previous_packaging_type);
+      if (previousPackagingInfo) {
+        if (currentPackagingInfo.isLowWaste && !previousPackagingInfo.isLowWaste) {
+          toast.success(
+            `🎉 Manual sustainable switch recorded!`,
+            {
+              description: `You manually recorded switching from ${previousPackagingInfo.label} to ${currentPackagingInfo.label} for "${currentLog.food_item_name}". Great environmental choice!`,
+              duration: 8000,
+            }
+          );
+        } else if (!currentPackagingInfo.isLowWaste && previousPackagingInfo.isLowWaste) {
+          toast.warning(
+            `Manual unsustainable switch recorded.`,
+            {
+              description: `You switched from ${previousPackagingInfo.label} (low waste) to ${currentPackagingInfo.label}. Try to stick to sustainable options when possible!`,
+              duration: 8000,
+            }
+          );
+        } else {
+          toast.info(
+            `Manual switch recorded for "${currentLog.food_item_name}" (no sustainability change).`,
+            {
+              description: `From ${previousPackagingInfo.label} to ${currentPackagingInfo.label}. ${currentPackagingInfo.isLowWaste ? 'Both are sustainable choices!' : 'Consider exploring low-waste alternatives!'}`,
+              duration: 7000,
+            }
+          );
+        }
+      }
+    }
+  };
 
   const showDynamicFeedback = (currentLog: PackagingLog, previousLog: PackagingLog | null, switchType: 'sustainable' | 'unsustainable' | 'same_waste_level' | 'none') => {
     const currentPackagingInfo = packagingTypes.find(p => p.id === currentLog.packaging_type);
@@ -1821,46 +2002,51 @@ Focus on:
 
       {editingLogItem && (
         <Dialog open={isEditModalOpen} onOpenChange={(isOpen) => !isOpen && closeEditModal()}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Log</DialogTitle>
               <DialogDescription>
                 Edit the details of the log entry.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4 space-y-2">
-              <Label htmlFor="editFoodItemName">Food Item Name</Label>
-              <Input 
-                id="editFoodItemName"
-                value={editFoodItemName}
-                onChange={(e) => setEditFoodItemName(e.target.value)}
-                placeholder="e.g., Apples, Oats, Bread"
-                required
-              />
-              <Label htmlFor="editPackagingType">Packaging Type</Label>
-              <Select onValueChange={(value) => {
-                setEditSelectedPackaging(value);
-                if (value !== 'OTHER_UNKNOWN') {
-                  setEditCustomPackagingType('');
-                }
-              }} value={editSelectedPackaging} required>
-                <SelectTrigger id="editPackagingType">
-                  <SelectValue placeholder="Select packaging type..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {packagingTypes.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      <span className="flex items-center gap-2">
-                        <span className={`inline-block w-2 h-2 rounded-full ${type.isLowWaste ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                        {type.label}
-                        <span className={`text-xs px-1 py-0.5 rounded ${type.isLowWaste ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {type.isLowWaste ? 'Low Waste' : 'High Waste'}
+            <div className="py-4 space-y-4">
+              <div>
+                <Label htmlFor="editFoodItemName">Food Item Name</Label>
+                <Input 
+                  id="editFoodItemName"
+                  value={editFoodItemName}
+                  onChange={(e) => setEditFoodItemName(e.target.value)}
+                  placeholder="e.g., Apples, Oats, Bread"
+                  required
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="editPackagingType">Packaging Type</Label>
+                <Select onValueChange={(value) => {
+                  setEditSelectedPackaging(value);
+                  if (value !== 'OTHER_UNKNOWN') {
+                    setEditCustomPackagingType('');
+                  }
+                }} value={editSelectedPackaging} required>
+                  <SelectTrigger id="editPackagingType">
+                    <SelectValue placeholder="Select packaging type..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    {packagingTypes.map((type) => (
+                      <SelectItem key={type.id} value={type.id}>
+                        <span className="flex items-center gap-2">
+                          <span className={`inline-block w-2 h-2 rounded-full ${type.isLowWaste ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                          {type.label}
+                          <span className={`text-xs px-1 py-0.5 rounded ${type.isLowWaste ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {type.isLowWaste ? 'Low Waste' : 'High Waste'}
+                          </span>
                         </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               
               {/* Custom packaging type input for edit modal */}
               {editSelectedPackaging === 'OTHER_UNKNOWN' && (
@@ -1879,32 +2065,137 @@ Focus on:
                 </div>
               )}
               
-              <Label htmlFor="editQuantity">Quantity</Label>
-              <Input 
-                id="editQuantity"
-                type="text"
-                value={editQuantity}
-                onChange={(e) => {
-                  let val = e.target.value.replace(/[^0-9]/g, '');
-                  if (val.length > 1 && val.startsWith('0')) {
-                    val = val.substring(1);
-                  }
-                  if (val === '' || parseInt(val, 10) === 0) {
-                    setEditQuantity(val);
-                  } else {
-                    setEditQuantity(val);
-                  }
-                }}
-                placeholder="1"
-                required
-              />
-              <Label htmlFor="editNotes">Notes (Optional)</Label>
-              <Input 
-                id="editNotes"
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
-                placeholder="e.g., Brand, bought at Farmer's Market, bulk bin at Store X"
-              />
+              <div>
+                <Label htmlFor="editQuantity">Quantity</Label>
+                <Input 
+                  id="editQuantity"
+                  type="text"
+                  value={editQuantity}
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/[^0-9]/g, '');
+                    if (val.length > 1 && val.startsWith('0')) {
+                      val = val.substring(1);
+                    }
+                    if (val === '' || parseInt(val, 10) === 0) {
+                      setEditQuantity(val);
+                    } else {
+                      setEditQuantity(val);
+                    }
+                  }}
+                  placeholder="1"
+                  required
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="editNotes">Notes (Optional)</Label>
+                <Input 
+                  id="editNotes"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="e.g., Brand, bought at Farmer's Market, bulk bin at Store X"
+                />
+              </div>
+              
+              {/* Manual Switch Section */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center space-x-2 mb-3">
+                  <input
+                    type="checkbox"
+                    id="editManualSwitch"
+                    checked={editManualSwitch}
+                    onChange={(e) => {
+                      setEditManualSwitch(e.target.checked);
+                      if (!e.target.checked) {
+                        setEditSelectedPreviousLog('');
+                        setEditCustomPreviousItem('');
+                      }
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="editManualSwitch" className="text-sm font-medium">
+                    This item is a switch from a previous purchase
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Check this if you consciously switched from a different item/packaging to this one (e.g., from plastic bottles to metal cans).
+                </p>
+                
+                {editManualSwitch && (
+                  <div className="space-y-4 pl-4 border-l-2 border-blue-200 bg-blue-50/30 p-4 rounded-r-lg">
+                    <div>
+                      <Label htmlFor="editPreviousItem">What did you switch from?</Label>
+                      <Select 
+                        value={editSelectedPreviousLog} 
+                        onValueChange={(value) => {
+                          setEditSelectedPreviousLog(value);
+                          if (value !== 'custom') {
+                            setEditCustomPreviousItem('');
+                          }
+                        }}
+                      >
+                        <SelectTrigger id="editPreviousItem">
+                          <SelectValue placeholder="Select previous item or choose custom..." />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px] z-50">
+                          <SelectItem value="custom">
+                            <span className="flex items-center gap-2">
+                              <span className="text-blue-600">✏️</span>
+                              Custom item (specify below)
+                            </span>
+                          </SelectItem>
+                          {editingLogItem && getEligiblePreviousLogs(editingLogItem.id, editingLogItem.created_at).map((log) => {
+                            const packagingInfo = packagingTypes.find(p => p.id === log.packaging_type);
+                            const packagingLabel = packagingInfo?.label || log.packaging_type;
+                            const wasteIndicator = packagingInfo?.isLowWaste ? '🌱' : '🗑️';
+                            const dateStr = new Date(log.created_at).toLocaleDateString();
+                            
+                            return (
+                              <SelectItem key={log.id} value={log.id}>
+                                <div className="flex items-center gap-2 w-full">
+                                  <span>{wasteIndicator}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="truncate text-sm">
+                                      {log.food_item_name}
+                                    </div>
+                                    <div className="truncate text-xs text-gray-500">
+                                      {packagingLabel} - {dateStr}
+                                    </div>
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    {editSelectedPreviousLog === 'custom' && (
+                      <div>
+                        <Label htmlFor="editCustomPreviousItem">Describe the previous item</Label>
+                        <Input
+                          id="editCustomPreviousItem"
+                          value={editCustomPreviousItem}
+                          onChange={(e) => setEditCustomPreviousItem(e.target.value)}
+                          placeholder="e.g., Plastic Gatorade bottles, Disposable coffee cups"
+                          required
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Describe what you used to buy before switching to this item.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {editSelectedPreviousLog && editSelectedPreviousLog !== 'custom' && (
+                      <div className="bg-blue-100 p-3 rounded-lg border border-blue-200">
+                        <p className="text-sm text-blue-800">
+                          <strong>Switch Preview:</strong> You'll be recording a switch from the selected previous item to "{editFoodItemName}" with {packagingTypes.find(p => p.id === editSelectedPackaging)?.label || editSelectedPackaging}.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={closeEditModal} disabled={isSubmittingEdit}>Cancel</Button>
