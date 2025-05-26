@@ -45,9 +45,9 @@ interface RecipeDetail {
 const SPOONACULAR_API_KEY = import.meta.env.VITE_SPOONACULAR_API_KEY;
 const SPOONACULAR_IMAGE_BASE_URL = "https://spoonacular.com/cdn/ingredients_100x100/"; // Or _250x250 / _500x500
 
-// Updated for OpenRouter
-const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Updated for Anthropic
+const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY;
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 // Define your site URL and app name (can be placeholders for local dev)
 const YOUR_SITE_URL = window.location.origin; // Or your deployed site URL
 const YOUR_APP_NAME = "Forkprint"; // Or your app's name
@@ -321,11 +321,11 @@ const FoodExpiryPage: React.FC = () => {
             description: "Please set VITE_SPOONACULAR_API_KEY in your .env file."
         });
     }
-    // Updated for OpenRouter
-    if (!OPENROUTER_API_KEY) {
-        console.warn("OpenRouter API key is not set. Recipe suggestions will be disabled.");
-        toast.warning("Recipe suggestions disabled: OpenRouter API key missing.",{
-            description: "Please set VITE_OPENROUTER_API_KEY in your .env file."
+    // Updated for Anthropic
+    if (!ANTHROPIC_API_KEY) {
+        console.warn("Anthropic API key is not set. Recipe suggestions will be disabled.");
+        toast.warning("Recipe suggestions disabled: Anthropic API key missing.",{
+            description: "Please set VITE_ANTHROPIC_KEY in your .env file."
         });
     }
     fetchFridgeItems();
@@ -334,7 +334,7 @@ const FoodExpiryPage: React.FC = () => {
   // useEffect to load cached recipes when fridgeItems or user changes
   useEffect(() => {
     const loadInitialCachedRecipes = async () => {
-        if (!user || fridgeItems.length === 0 || isLoading || !OPENROUTER_API_KEY || initialCacheLoadAttempted) {
+        if (!user || fridgeItems.length === 0 || isLoading || !ANTHROPIC_API_KEY || initialCacheLoadAttempted) {
             // Don't load if no user, no items, main data is loading, no API key for suggestions, or already attempted
             if (fridgeItems.length === 0 && !isLoading) setInitialCacheLoadAttempted(true); // Mark as attempted if fridge is empty and not loading
             return;
@@ -403,12 +403,12 @@ const FoodExpiryPage: React.FC = () => {
         loadInitialCachedRecipes();
     }
 
-  }, [fridgeItems, user, isLoading, OPENROUTER_API_KEY, initialCacheLoadAttempted]); // Added initialCacheLoadAttempted to dependencies
+  }, [fridgeItems, user, isLoading, ANTHROPIC_API_KEY, initialCacheLoadAttempted]); // Updated dependency
 
   // Additional useEffect to load any existing cached recipes on page load
   useEffect(() => {
     const loadAllCachedRecipes = async () => {
-      if (!user || !OPENROUTER_API_KEY) return;
+      if (!user || !ANTHROPIC_API_KEY) return;
       
       try {
         // Get the most recent cached recipes for this user
@@ -444,7 +444,7 @@ const FoodExpiryPage: React.FC = () => {
     if (user && suggestedRecipesList.length === 0 && !isFetchingRecipes) {
       loadAllCachedRecipes();
     }
-  }, [user, OPENROUTER_API_KEY]); // Only depend on user and API key, run once
+  }, [user, ANTHROPIC_API_KEY]); // Updated dependency
 
   // Update items for selected calendar date
   useEffect(() => {
@@ -686,8 +686,8 @@ const FoodExpiryPage: React.FC = () => {
 
   // Disposal Guidance Function
   const getDisposalGuidance = async (item: FoodItem) => {
-    if (!OPENROUTER_API_KEY) {
-      toast.error("Disposal guidance feature is disabled.", { description: "OpenRouter API key is not configured." });
+    if (!ANTHROPIC_API_KEY) {
+      toast.error("Disposal guidance feature is disabled.", { description: "Anthropic API key is not configured." });
       return;
     }
 
@@ -729,36 +729,65 @@ Be specific about the food type and consider factors like:
 Format your response in clear sections using markdown headers. Be practical, safety-focused, and environmentally conscious.
       `;
 
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': YOUR_SITE_URL,
-          'X-Title': YOUR_APP_NAME,
-        },
-        body: JSON.stringify({
-          model: 'deepseek/deepseek-chat',
-          messages: [
-            { role: 'system', content: 'You are a food safety and disposal expert with knowledge of proper food waste management, composting, and safety protocols.' },
-            { role: 'user', content: prompt },
-          ],
+      // Use different URLs for development vs production
+      const isDevelopment = import.meta.env.DEV;
+      const apiUrl = isDevelopment 
+        ? 'https://cors-anywhere.herokuapp.com/https://api.anthropic.com/v1/messages'
+        : '/api/generate-disposal-guidance'; // Different endpoint for disposal
+
+      let response;
+      
+      if (isDevelopment) {
+        // Direct API call with CORS proxy for development
+        const requestBody = {
+          model: 'claude-3-haiku-20240307',
           max_tokens: 1500,
-          temperature: 0.3, // Lower temperature for more consistent, factual advice
-        }),
-      });
+          temperature: 0.3,
+          messages: [
+            { 
+              role: 'user', 
+              content: prompt 
+            }
+          ],
+        };
+        
+        response = await fetch(apiUrl, { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify(requestBody),
+        });
+      } else {
+        // Call Vercel function in production
+        response = await fetch(apiUrl, { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            foodItem: item.name,
+            amount: item.amount,
+            daysPast: daysPast,
+            expiryDate: expiry.toLocaleDateString()
+          }),
+        });
+      }
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("OpenRouter API Error:", errorData);
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Anthropic API Error:", errorData);
         let errorMessage = `API request failed with status ${response.status}`;
         if (errorData && errorData.error && errorData.error.message) errorMessage = errorData.error.message;
         throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-        setDisposalGuidance(data.choices[0].message.content);
+      if (data.content && data.content.length > 0 && data.content[0].text) {
+        setDisposalGuidance(data.content[0].text);
       } else {
         setDisposalGuidance("I couldn't generate disposal guidance at this time. Please consult local food safety guidelines or waste management resources.");
       }
@@ -859,8 +888,8 @@ Format your response in clear sections using markdown headers. Be practical, saf
   };
 
   const handleSuggestRecipes = async (fetchNew = false) => {
-    if (!OPENROUTER_API_KEY) {
-      toast.error("Recipe suggestion feature is disabled.", { description: "OpenRouter API key is not configured." });
+    if (!ANTHROPIC_API_KEY) {
+      toast.error("Recipe suggestion feature is disabled.", { description: "Anthropic API key is not configured." });
       return;
     }
 
@@ -920,7 +949,7 @@ Format your response in clear sections using markdown headers. Be practical, saf
       }
     }
 
-    // Fetch from OpenRouter API
+    // Fetch from Anthropic API
     toast.info(fetchNew ? "Fetching fresh recipes from AI..." : "No cached suggestions for these items. Fetching new recipes from AI...");
     const itemNamesString = itemNamesArray.join(', ');
     
@@ -939,6 +968,7 @@ STRICT REQUIREMENTS:
 7. If the user has not added any items, do not suggest recipes.
 8. DO NOT PROVIDE ANY OTHER INFORMATION, COMMENTARY, OR TEXT OUTSIDE THE SPECIFIED FORMAT.
 9. DO NOT ASSIST WITH ANY INAPPROPRIATE REQUESTS AND ENSURE THAT ALL REQUESTS ARE APPROPRIATE AND RELATED TO FOOD AND RECIPES WITH INGREDIENTS THAT ARE APPROPRIATE. IF NOT, DO NOT RETURN ANYTHING 
+
 MANDATORY FORMAT FOR EACH RECIPE:
 ## [Recipe Name]
 
@@ -979,43 +1009,71 @@ EXAMPLE FORMAT:
 Now provide exactly 3 recipes following this format. Start immediately with the first recipe:`;
 
     try {
-      const response = await fetch(OPENROUTER_API_URL, { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': YOUR_SITE_URL,
-          'X-Title': YOUR_APP_NAME,
-        },
-        body: JSON.stringify({
-          model: 'deepseek/deepseek-chat',
+      console.log('Making request to API...');
+      
+      // Use different URLs for development vs production
+      const isDevelopment = import.meta.env.DEV;
+      const apiUrl = isDevelopment 
+        ? 'https://cors-anywhere.herokuapp.com/https://api.anthropic.com/v1/messages' // Fallback to CORS proxy for dev
+        : '/api/generate-recipes'; // Use Vercel function in production
+      
+      let response;
+      
+      if (isDevelopment) {
+        // Direct API call with CORS proxy for development
+        const requestBody = {
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 2500,
+          temperature: 0.5,
           messages: [
             { 
-              role: 'system', 
-              content: 'You are a recipe assistant that ONLY provides recipes in the exact format requested. You do not provide any other information, commentary, or text outside the specified format. You must follow the format precisely and include the required separators.' 
-            },
-            { role: 'user', content: prompt },
+              role: 'user', 
+              content: prompt 
+            }
           ],
-          max_tokens: 2500, 
-          temperature: 0.5,
-        }),
-      });
+        };
+        
+        response = await fetch(apiUrl, { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify(requestBody),
+        });
+      } else {
+        // Call Vercel function in production
+        response = await fetch(apiUrl, { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ingredients: itemNamesArray
+          }),
+        });
+      }
+
+      console.log('Response status:', response.status);
 
       if (!response.ok) { 
-        const errorData = await response.json();
-        console.error("OpenRouter API Error:", errorData);
-        let errorMessage = `API request failed with status ${response.status}`;
-        if (errorData && errorData.error && errorData.error.message) errorMessage = errorData.error.message;
-        throw new Error(errorMessage);
+        const errorData = await response.json().catch(() => ({}));
+        console.error("API error:", errorData);
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
       }
 
       const data = await response.json();
-      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-        const recipesMarkdown = data.choices[0].message.content;
+      console.log('Recipe generation response:', data);
+      
+      if (data.content && data.content.length > 0 && data.content[0].text) {
+        const recipesMarkdown = data.content[0].text;
         
+        // Clean up the response to remove any extra text before/after recipes
         const cleanedMarkdown = recipesMarkdown
-          .replace(/^[^#]*(?=##)/s, '')
-          .replace(/%%%---RECIPE_SEPARATOR---%%%\s*$/, '');
+          .replace(/^[^#]*(?=##)/s, '') // Remove text before first recipe
+          .replace(/%%%---RECIPE_SEPARATOR---%%%\s*$/, ''); // Remove trailing separator
         
         const newRecipes = parseRecipesMarkdown(cleanedMarkdown, 'api');
         
@@ -1173,7 +1231,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                                   variant="outline"
                                   className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
                                   onClick={() => getDisposalGuidance(item)}
-                                  disabled={isFetchingDisposal || !OPENROUTER_API_KEY}
+                                  disabled={isFetchingDisposal || !ANTHROPIC_API_KEY}
                                   title="Get disposal/safety guidance"
                                 >
                                   <Trash className="h-3 w-3 mr-1" />
@@ -1450,7 +1508,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
               onClick={() => handleSuggestRecipes(true)} 
               disabled={
                 isFetchingRecipes || 
-                !OPENROUTER_API_KEY || 
+                !ANTHROPIC_API_KEY || 
                 fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 ||
                 (lastFreshFetchTime && (Date.now() - lastFreshFetchTime < FRESH_FETCH_COOLDOWN_MS))
               }
@@ -1470,7 +1528,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
         {/* Placeholder/Status Messages Section */}
         {suggestedRecipesList.length === 0 && !isFetchingRecipes && initialCacheLoadAttempted && !isLoading && (
             <>
-                {OPENROUTER_API_KEY && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length > 0 && (
+                {ANTHROPIC_API_KEY && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length > 0 && (
                     <Card className="bg-gray-50 my-4">
                         <CardContent className="pt-6 text-sm text-center text-gray-600">
                             <ChefHat className="h-12 w-12 mx-auto text-gray-400 mb-2" />
@@ -1478,7 +1536,7 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
                         </CardContent>
                     </Card>
                 )}
-                {OPENROUTER_API_KEY && fridgeItems.length === 0 && (
+                {ANTHROPIC_API_KEY && fridgeItems.length === 0 && (
                     <Card className="bg-gray-50 my-4">
                         <CardContent className="pt-6 text-sm text-center text-gray-600">
                             <ChefHat className="h-10 w-10 mx-auto text-gray-300 mb-2" />
@@ -1489,11 +1547,11 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
             </>
         )}
 
-        {(!OPENROUTER_API_KEY || (fridgeItems.length > 0 && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 && !isLoading)) && (
+        {(!ANTHROPIC_API_KEY || (fridgeItems.length > 0 && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 && !isLoading)) && (
             <Card className="bg-yellow-50 border-yellow-200 my-4">
                 <CardContent className="pt-6 text-sm text-yellow-700">
-                    {!OPENROUTER_API_KEY && <p>Recipe suggestions disabled: OpenRouter API key missing in settings.</p>}
-                    {OPENROUTER_API_KEY && fridgeItems.length > 0 && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 && !isLoading &&
+                    {!ANTHROPIC_API_KEY && <p>Recipe suggestions disabled: Anthropic API key missing in settings.</p>}
+                    {ANTHROPIC_API_KEY && fridgeItems.length > 0 && fridgeItems.filter(item => new Date(item.expiry_date + 'T00:00:00') >= new Date(new Date().setHours(0,0,0,0))).length === 0 && !isLoading &&
                         <p>You have items in your fridge, but all are expired. Add some non-expired items to get recipe suggestions.</p>
                     }
                 </CardContent>

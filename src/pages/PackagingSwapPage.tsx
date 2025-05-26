@@ -19,6 +19,10 @@ import { format } from 'date-fns';
 const SPOONACULAR_API_KEY = import.meta.env.VITE_SPOONACULAR_API_KEY;
 const SPOONACULAR_IMAGE_BASE_URL = "https://spoonacular.com/cdn/ingredients_100x100/";
 
+// Anthropic API configuration
+const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY;
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+
 // OpenRouter API configuration
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -28,9 +32,9 @@ const YOUR_APP_NAME = "Forkprint";
 // Debug function to check environment variables (for troubleshooting)
 const debugEnvironmentVariables = () => {
   console.log('=== Environment Variables Debug ===');
-  console.log('OPENROUTER_API_KEY present:', !!OPENROUTER_API_KEY);
-  console.log('OPENROUTER_API_KEY length:', OPENROUTER_API_KEY?.length || 0);
-  console.log('OPENROUTER_API_KEY starts with:', OPENROUTER_API_KEY?.substring(0, 10) || 'undefined');
+  console.log('ANTHROPIC_API_KEY present:', !!ANTHROPIC_API_KEY);
+  console.log('ANTHROPIC_API_KEY length:', ANTHROPIC_API_KEY?.length || 0);
+  console.log('ANTHROPIC_API_KEY starts with:', ANTHROPIC_API_KEY?.substring(0, 10) || 'undefined');
   console.log('SPOONACULAR_API_KEY present:', !!SPOONACULAR_API_KEY);
   console.log('Environment:', process.env.NODE_ENV);
   console.log('Current origin:', window.location.origin);
@@ -211,10 +215,10 @@ const PackagingSwapPage = () => {
         description: "Please set VITE_SPOONACULAR_API_KEY in your .env file."
       });
     }
-    if (!OPENROUTER_API_KEY) {
-      console.warn("OpenRouter API key is not set. AI features will be disabled.");
-      toast.warning("AI features disabled: OpenRouter API key missing.", {
-        description: "Please set VITE_OPENROUTER_API_KEY in your .env file."
+    if (!ANTHROPIC_API_KEY) {
+      console.warn("Anthropic API key is not set. AI features will be disabled.");
+      toast.warning("AI features disabled: Anthropic API key missing.", {
+        description: "Please set VITE_ANTHROPIC_KEY in your .env file."
       });
     }
   }, []);
@@ -1004,8 +1008,8 @@ const PackagingSwapPage = () => {
 
   // AI-powered packaging alternatives generator
   const generatePackagingAlternatives = async (highWasteItems: PackagingLog[]) => {
-    if (!OPENROUTER_API_KEY) {
-      toast.error("AI features disabled: OpenRouter API key missing.");
+    if (!ANTHROPIC_API_KEY) {
+      toast.error("AI features disabled: Anthropic API key missing.");
       return;
     }
 
@@ -1046,34 +1050,33 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
     try {
       // Debug API call
       console.log('=== API Call Debug ===');
-      console.log('API URL:', OPENROUTER_API_URL);
-      console.log('API Key available:', !!OPENROUTER_API_KEY);
-      console.log('API Key length:', OPENROUTER_API_KEY?.length);
-      console.log('Site URL:', YOUR_SITE_URL);
-      console.log('App Name:', YOUR_APP_NAME);
+      console.log('API URL:', ANTHROPIC_API_URL);
+      console.log('API Key available:', !!ANTHROPIC_API_KEY);
+      console.log('API Key length:', ANTHROPIC_API_KEY?.length);
       
-      const response = await fetch(OPENROUTER_API_URL, { 
+      const response = await fetch(ANTHROPIC_API_URL, { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': YOUR_SITE_URL,
-          'X-Title': YOUR_APP_NAME,
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'deepseek/deepseek-chat',
-          messages: [
-            { role: 'system', content: 'You are a helpful sustainability expert assistant.' },
-            { role: 'user', content: prompt }
-          ],
+          model: 'claude-3-haiku-20240307', // Cheapest Claude model
           max_tokens: 2000,
           temperature: 0.7,
+          messages: [
+            { 
+              role: 'user', 
+              content: prompt 
+            }
+          ],
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error("OpenRouter API Error:", errorData);
+        console.error("Anthropic API Error:", errorData);
         let errorMessage = `API request failed with status ${response.status}`;
         if (errorData && errorData.error && errorData.error.message) {
           errorMessage = errorData.error.message;
@@ -1083,8 +1086,8 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
 
       const data = await response.json();
       
-      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-        const content = data.choices[0].message.content;
+      if (data.content && data.content.length > 0 && data.content[0].text) {
+        const content = data.content[0].text;
         
         if (content) {
           try {
@@ -1122,8 +1125,8 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
 
   // AI-powered sustainability insights generator  
   const generateSustainabilityInsights = async () => {
-    if (!OPENROUTER_API_KEY) {
-      toast.error("AI features disabled: OpenRouter API key missing.");
+    if (!ANTHROPIC_API_KEY) {
+      toast.error("AI features disabled: Anthropic API key missing.");
       return;
     }
 
@@ -1178,28 +1181,29 @@ Focus on:
     `.trim();
 
     try {
-      const response = await fetch(OPENROUTER_API_URL, { 
+      const response = await fetch(ANTHROPIC_API_URL, { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': YOUR_SITE_URL,
-          'X-Title': YOUR_APP_NAME,
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'deepseek/deepseek-chat',
-          messages: [
-            { role: 'system', content: 'You are a helpful sustainability coach assistant.' },
-            { role: 'user', content: prompt }
-          ],
+          model: 'claude-3-haiku-20240307', // Cheapest Claude model
           max_tokens: 2000,
           temperature: 0.7,
+          messages: [
+            { 
+              role: 'user', 
+              content: prompt 
+            }
+          ],
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error("OpenRouter API Error:", errorData);
+        console.error("Anthropic API Error:", errorData);
         let errorMessage = `API request failed with status ${response.status}`;
         if (errorData && errorData.error && errorData.error.message) {
           errorMessage = errorData.error.message;
@@ -1209,8 +1213,8 @@ Focus on:
 
       const data = await response.json();
       
-      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-        const content = data.choices[0].message.content;
+      if (data.content && data.content.length > 0 && data.content[0].text) {
+        const content = data.content[0].text;
         
         if (content) {
           try {
@@ -1458,7 +1462,7 @@ Focus on:
                   <Lightbulb className="h-5 w-5 text-yellow-600" />
                   Your Insights & Tips
                 </CardTitle>
-                {OPENROUTER_API_KEY && userLogs.length > 0 && (
+                {ANTHROPIC_API_KEY && userLogs.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
