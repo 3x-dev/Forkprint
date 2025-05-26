@@ -46,7 +46,7 @@ const SPOONACULAR_API_KEY = import.meta.env.VITE_SPOONACULAR_API_KEY;
 const SPOONACULAR_IMAGE_BASE_URL = "https://spoonacular.com/cdn/ingredients_100x100/"; // Or _250x250 / _500x500
 
 // Updated for Anthropic
-const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY;
+const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY || import.meta.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 // Define your site URL and app name (can be placeholders for local dev)
 const YOUR_SITE_URL = window.location.origin; // Or your deployed site URL
@@ -686,7 +686,10 @@ const FoodExpiryPage: React.FC = () => {
 
   // Disposal Guidance Function
   const getDisposalGuidance = async (item: FoodItem) => {
-    if (!ANTHROPIC_API_KEY) {
+    // Only check for API key in development, not in production
+    const isDevelopment = import.meta.env.DEV;
+    
+    if (isDevelopment && !ANTHROPIC_API_KEY) {
       toast.error("Disposal guidance feature is disabled.", { description: "Anthropic API key is not configured." });
       return;
     }
@@ -730,7 +733,6 @@ Format your response in clear sections using markdown headers. Be practical, saf
       `;
 
       // Use different URLs for development vs production
-      const isDevelopment = import.meta.env.DEV;
       const apiUrl = isDevelopment 
         ? 'https://cors-anywhere.herokuapp.com/https://api.anthropic.com/v1/messages'
         : '/api/generate-disposal-guidance'; // Different endpoint for disposal
@@ -888,7 +890,10 @@ Format your response in clear sections using markdown headers. Be practical, saf
   };
 
   const handleSuggestRecipes = async (fetchNew = false) => {
-    if (!ANTHROPIC_API_KEY) {
+    // Only check for API key in development, not in production
+    const isDevelopment = import.meta.env.DEV;
+    
+    if (isDevelopment && !ANTHROPIC_API_KEY) {
       toast.error("Recipe suggestion feature is disabled.", { description: "Anthropic API key is not configured." });
       return;
     }
@@ -1012,7 +1017,6 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
       console.log('Making request to API...');
       
       // Use different URLs for development vs production
-      const isDevelopment = import.meta.env.DEV;
       const apiUrl = isDevelopment 
         ? 'https://cors-anywhere.herokuapp.com/https://api.anthropic.com/v1/messages' // Fallback to CORS proxy for dev
         : '/api/generate-recipes'; // Use Vercel function in production

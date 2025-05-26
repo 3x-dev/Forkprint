@@ -20,7 +20,7 @@ const SPOONACULAR_API_KEY = import.meta.env.VITE_SPOONACULAR_API_KEY;
 const SPOONACULAR_IMAGE_BASE_URL = "https://spoonacular.com/cdn/ingredients_100x100/";
 
 // Anthropic API configuration
-const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY;
+const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY || import.meta.env.ANTHROPIC_API_KEY; // For VITE_ or direct
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
 // OpenRouter API configuration 
@@ -1008,7 +1008,8 @@ const PackagingSwapPage = () => {
 
   // AI-powered packaging alternatives generator
   const generatePackagingAlternatives = async (highWasteItems: PackagingLog[]) => {
-    if (!ANTHROPIC_API_KEY) {
+    const isDevelopment = import.meta.env.DEV;
+    if (isDevelopment && !ANTHROPIC_API_KEY) {
       toast.error("AI features disabled: Anthropic API key missing.");
       return;
     }
@@ -1048,71 +1049,69 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
     `.trim();
 
     try {
-      // Debug API call
-      console.log('=== API Call Debug ===');
-      console.log('API URL:', ANTHROPIC_API_URL);
-      console.log('API Key available:', !!ANTHROPIC_API_KEY);
-      console.log('API Key length:', ANTHROPIC_API_KEY?.length);
-      
-      const response = await fetch(ANTHROPIC_API_URL, { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-3-haiku-20240307', // Cheapest Claude model
-          max_tokens: 2000,
-          temperature: 0.7,
-          messages: [
-            { 
-              role: 'user', 
-              content: prompt 
-            }
-          ],
-        }),
-      });
+      const apiUrl = isDevelopment
+        ? `https://cors-anywhere.herokuapp.com/${ANTHROPIC_API_URL}`
+        : '/api/generate-packaging-alternatives';
 
+      let response;
+      const requestBody = {
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 2000,
+        temperature: 0.7,
+        messages: [{ role: 'user', content: prompt }],
+      };
+
+      if (isDevelopment) {
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY, // Frontend key for dev direct/proxy call
+            'anthropic-version': '2023-06-01',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify(requestBody),
+        });
+      } else {
+        // In production, send only necessary data to our backend
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ highWasteItems }), // Vercel function will construct the prompt
+        });
+      }
+      
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Anthropic API Error:", errorData);
+        const errorData = await response.json().catch(() => ({ text: response.statusText }));
+        console.error("API Error:", errorData);
         let errorMessage = `API request failed with status ${response.status}`;
         if (errorData && errorData.error && errorData.error.message) {
           errorMessage = errorData.error.message;
+        } else if (errorData && errorData.text) {
+          errorMessage = errorData.text;
         }
         throw new Error(errorMessage);
       }
 
       const data = await response.json();
       
-      if (data.content && data.content.length > 0 && data.content[0].text) {
-        const content = data.content[0].text;
+      // In production, our API directly returns the "alternatives" structure
+      // In development (via proxy), it returns the full Anthropic response
+      const alternativesData = isDevelopment ? (data.content && data.content.length > 0 && data.content[0].text ? JSON.parse(data.content[0].text) : null) : data;
+
+      if (alternativesData && alternativesData.alternatives && Array.isArray(alternativesData.alternatives)) {
+        const alternatives: PackagingAlternative[] = alternativesData.alternatives.map((alt: any, index: number) => ({
+          id: `alt-${Date.now()}-${index}`,
+          ...alt
+        }));
         
-        if (content) {
-          try {
-            const parsedContent = JSON.parse(content);
-            if (parsedContent.alternatives && Array.isArray(parsedContent.alternatives)) {
-              const alternatives: PackagingAlternative[] = parsedContent.alternatives.map((alt: any, index: number) => ({
-                id: `alt-${Date.now()}-${index}`,
-                ...alt
-              }));
-              
-              setPackagingAlternatives(alternatives);
-              toast.success(`Generated ${alternatives.length} packaging alternative${alternatives.length !== 1 ? 's' : ''}!`);
-            } else {
-              throw new Error('Invalid response format: missing alternatives array');
-            }
-          } catch (parseError) {
-            console.error('Error parsing AI response:', parseError);
-            console.error('Raw response content:', content);
-            toast.error('Failed to parse AI response. Please try again.');
-          }
-        } else {
-          toast.info("AI couldn't generate alternatives this time. Try again later.");
-        }
+        setPackagingAlternatives(alternatives);
+        toast.success(`Generated ${alternatives.length} packaging alternative${alternatives.length !== 1 ? 's' : ''}!`);
       } else {
-        toast.info("AI couldn't generate alternatives this time. Try again later.");
+        console.error('Invalid response format or no alternatives:', alternativesData);
+        toast.info("AI couldn't generate alternatives this time, or response format was unexpected. Try again later.");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
@@ -1125,16 +1124,16 @@ Focus on practical, realistic alternatives available in most areas. Consider bul
 
   // AI-powered sustainability insights generator  
   const generateSustainabilityInsights = async () => {
-    if (!ANTHROPIC_API_KEY) {
+    const isDevelopment = import.meta.env.DEV;
+    if (isDevelopment && !ANTHROPIC_API_KEY) {
       toast.error("AI features disabled: Anthropic API key missing.");
       return;
     }
 
     setIsGeneratingInsights(true);
 
-    const recentLogs = userLogs.slice(0, 20); // Use last 20 items for analysis
+    const recentLogs = userLogs.slice(0, 20); 
     
-    // Add validation for empty logs
     if (recentLogs.length === 0) {
       toast.info("No packaging logs found to analyze. Add some purchases first!");
       setIsGeneratingInsights(false);
@@ -1181,65 +1180,66 @@ Focus on:
     `.trim();
 
     try {
-      const response = await fetch(ANTHROPIC_API_URL, { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-3-haiku-20240307', // Cheapest Claude model
-          max_tokens: 2000,
-          temperature: 0.7,
-          messages: [
-            { 
-              role: 'user', 
-              content: prompt 
-            }
-          ],
-        }),
-      });
+      const apiUrl = isDevelopment
+        ? `https://cors-anywhere.herokuapp.com/${ANTHROPIC_API_URL}`
+        : '/api/generate-sustainability-insights';
+      
+      let response;
+      const requestBody = {
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 2000,
+        temperature: 0.7,
+        messages: [{ role: 'user', content: prompt }],
+      };
+
+      if (isDevelopment) {
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY, // Frontend key for dev direct/proxy call
+            'anthropic-version': '2023-06-01',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify(requestBody),
+        });
+      } else {
+        // In production, send relevant data to our backend
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ stats }), // Vercel function will construct the prompt
+        });
+      }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Anthropic API Error:", errorData);
+        const errorData = await response.json().catch(() => ({ text: response.statusText }));
+        console.error("API Error:", errorData);
         let errorMessage = `API request failed with status ${response.status}`;
         if (errorData && errorData.error && errorData.error.message) {
           errorMessage = errorData.error.message;
+        } else if (errorData && errorData.text) {
+          errorMessage = errorData.text;
         }
         throw new Error(errorMessage);
       }
 
       const data = await response.json();
+      const insightsData = isDevelopment ? (data.content && data.content.length > 0 && data.content[0].text ? JSON.parse(data.content[0].text) : null) : data;
       
-      if (data.content && data.content.length > 0 && data.content[0].text) {
-        const content = data.content[0].text;
+      if (insightsData && insightsData.insights && Array.isArray(insightsData.insights)) {
+        const insights: SustainabilityInsight[] = insightsData.insights.map((insight: any, index: number) => ({
+          id: `insight-${Date.now()}-${index}`,
+          ...insight
+        }));
         
-        if (content) {
-          try {
-            const parsedContent = JSON.parse(content);
-            if (parsedContent.insights && Array.isArray(parsedContent.insights)) {
-              const insights: SustainabilityInsight[] = parsedContent.insights.map((insight: any, index: number) => ({
-                id: `insight-${Date.now()}-${index}`,
-                ...insight
-              }));
-              
-              setSustainabilityInsights(insights);
-              toast.success(`Generated ${insights.length} sustainability insight${insights.length !== 1 ? 's' : ''}!`);
-            } else {
-              throw new Error('Invalid response format: missing insights array');
-            }
-          } catch (parseError) {
-            console.error('Error parsing AI response:', parseError);
-            console.error('Raw response content:', content);
-            toast.error('Failed to parse AI response. Please try again.');
-          }
-        } else {
-          toast.info("AI couldn't generate insights this time. Try again later.");
-        }
+        setSustainabilityInsights(insights);
+        toast.success(`Generated ${insights.length} sustainability insight${insights.length !== 1 ? 's' : ''}!`);
       } else {
-        toast.info("AI couldn't generate insights this time. Try again later.");
+        console.error('Invalid response format or no insights:', insightsData);
+        toast.info("AI couldn't generate insights this time, or response format was unexpected. Try again later.");
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
