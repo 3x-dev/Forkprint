@@ -1,3 +1,4 @@
+import { Helmet } from "react-helmet-async";
 import { useAuthContext } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
@@ -83,6 +84,10 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-gray-100 py-8">
+      <Helmet>
+        <title>Your Dashboard - Forkprint</title>
+        <meta name="description" content="Track your food waste, view sustainability insights, and manage your progress on Forkprint." />
+      </Helmet>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-10 pb-4 border-b border-gray-300">
           <div>
