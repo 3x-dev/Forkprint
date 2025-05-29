@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Helmet } from "react-helmet-async";
 import { useAuthContext } from '@/components/auth/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -1440,6 +1441,10 @@ Focus on:
 
   return (
     <div className="container mx-auto p-4 md:p-8">
+      <Helmet>
+        <title>Packaging Swap - Forkprint</title>
+        <meta name="description" content="Discover sustainable packaging alternatives and reduce your environmental impact with Forkprint." />
+      </Helmet>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Sustainable Packaging Swapper</h1>
         <Link to="/dashboard">

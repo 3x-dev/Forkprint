@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Helmet } from "react-helmet-async";
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom'; // Added import
 import { useAuthContext } from '@/components/auth/AuthProvider'; // For user context
@@ -1128,6 +1129,10 @@ Now provide exactly 3 recipes following this format. Start immediately with the 
 
   return (
     <div className="container mx-auto p-4 md:p-8">
+      <Helmet>
+        <title>Food Expiry Tracker - Forkprint</title>
+        <meta name="description" content="Track food expiry dates and minimize spoilage with Forkprint's food expiry feature." />
+      </Helmet>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Food Expiry Tracker</h1>
         <Link to="/dashboard">
