@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Helmet } from "react-helmet-async";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/logo";
 import { ModeCard } from "@/components/mode-card";
@@ -12,6 +13,10 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-white">
+      <Helmet>
+        <title>Forkprint - Reduce Your Food Waste</title>
+        <meta name="description" content="Welcome to Forkprint. Learn how to understand and reduce your food waste with our innovative tools and insights." />
+      </Helmet>
       <Hero />
       <Features />
       
