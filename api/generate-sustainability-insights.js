@@ -20,31 +20,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid stats provided' });
     }
 
-    // Proxy request to Python carbon tracking service
-    console.log('Node.js API: Proxying request to Python carbon tracking service...');
-    
-    const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5001';
-    const response = await fetch(`${pythonServiceUrl}/api/sustainability-insights`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ stats }),
+    // CodeCarbon integration removed. Return a placeholder response.
+    // TODO: Implement sustainability insights logic directly here if needed.
+    return res.status(200).json({
+      insights: [
+        {
+          type: "environmental_impact",
+          title: "Placeholder Insight",
+          description: "This is a placeholder response. CodeCarbon integration has been removed.",
+          actionItems: ["Replace with real logic."]
+        }
+      ]
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Python service error: ${response.status} ${errorText}`);
-      return res.status(response.status).json({ 
-        error: `Python service error: ${response.status}`, 
-        details: errorText 
-      });
-    }
-
-    const result = await response.json();
-    console.log('Node.js API: Successfully received response from Python carbon tracking service.');
-    return res.status(200).json(result);
-
   } catch (error) {
     console.error('Node.js API: Server error:', error);
     return res.status(500).json({ error: 'Internal server error', message: error.message });

@@ -53,28 +53,22 @@ const Dashboard = () => {
       title: "Food Expiry Tracker",
       icon: <Apple className="h-8 w-8 text-green-600" />,
       description: "Reduce household food waste. Track perishables, get expiry reminders, and learn if expired items are compostable or must be trashed.",
-      goal: "Made by Jason",
       buttonText: "Track Expiries",
-      path: "/feature/food-expiry",
-      author: "Jason"
+      path: "/feature/food-expiry"
     },
     {
       title: "Sustainable Packaging Swapper",
       icon: <ShoppingBag className="h-8 w-8 text-blue-600" />,
       description: "Log your packaging choices, track swaps from less sustainable to more sustainable options, and see your positive impact grow.",
-      goal: "Made by Aryan",
       buttonText: "Log Packaging",
-      path: "/feature/packaging-swap",
-      author: "Aryan"
+      path: "/feature/packaging-swap"
     },
     {
       title: "Food Waste Logger",
       icon: <Trash2 className="h-8 w-8 text-red-600" />,
       description: "Log what you served and what was left uneaten. Automatically calculates the percentage wasted and total food waste over time for your meals.",
-      goal: "Made by Parth",
       buttonText: "Log Food Waste",
-      path: "/feature/food-waste-logger",
-      author: "Parth"
+      path: "/feature/food-waste-logger"
     }
   ];
 
@@ -139,7 +133,7 @@ const Dashboard = () => {
                   <div className="mb-4" />
                   <h3 className="text-xl font-semibold text-gray-800 mb-3 text-center">{feature.title}</h3>
                   <p className="text-gray-600 text-sm mb-3 leading-relaxed">{feature.description}</p>
-                  <p className="text-xs text-gray-500 italic mb-4">Made by {feature.author}</p>
+                  <p className="text-xs text-gray-500 italic mb-4"></p>
                 </div>
                 <div className="p-6 bg-gray-50 border-t border-gray-200">
                   <Button 
